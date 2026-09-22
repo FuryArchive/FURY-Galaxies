@@ -8,6 +8,7 @@
 #include "server/zone/managers/auction/AuctionManager.h"
 #include "server/zone/managers/fury/economy/FuryMarketObserver.h"
 #include "server/zone/managers/fury/economy/FuryMarketDryRun.h"
+#include "server/zone/managers/fury/economy/FuryMarketTickTask.h"
 #include "server/zone/managers/auction/AuctionsMap.h"
 #include "server/zone/managers/object/ObjectManager.h"
 #include "templates/manager/TemplateManager.h"
@@ -279,6 +280,11 @@ void AuctionManagerImplementation::initialize() {
 		checkVendorItems(true);
 	}, "StartupAuctionManagerCheck", "slowQueue");
 
+	if (ConfigManager::instance()->getBool("Fury.Economy.ObserveVendorMarket", false)) {
+		Reference<FuryMarketTickTask*> furyTask = new FuryMarketTickTask(_this.getReferenceUnsafeStaticCast());
+		furyTask->schedule(10000);
+	}
+
 	auto elapsed = startTime.miliDifference() / 1000.0;
 	int ps = elapsed > 0 ? countDatabaseItems / elapsed : countDatabaseItems;
 	int skipped = countDatabaseItems - auctionMap->getTotalItemCount();
@@ -288,6 +294,45 @@ void AuctionManagerImplementation::initialize() {
 		<< "in " << elapsed << " second(s), (" << ps << "/s), "
 		<< "skipped " << skipped << " (" << countDuplicates << " duplicate listings), "
 		<< "loaded " << auctionMap->getTotalItemCount() << " object(s) into auctionsMap.";
+}
+
+void AuctionManagerImplementation::runFuryMarketTick() {
+	if (!ConfigManager::instance()->getBool("Fury.Economy.ObserveVendorMarket", false))
+		return;
+
+	TerminalListVector items = auctionMap->getVendorTerminalData("", "", 0);
+	auto snapshot = FuryMarketObserver::scan(&items);
+
+	info(true)
+		<< "FURY economy observer: terminals=" << snapshot.terminalCount
+		<< ", activeListings=" << snapshot.activeListings
+		<< ", fixedPrice=" << snapshot.fixedPriceListings
+		<< ", auctions=" << snapshot.auctionListings
+		<< ", minPrice=" << snapshot.minPrice
+		<< ", maxPrice=" << snapshot.maxPrice
+		<< ", averagePrice=" << snapshot.averagePrice()
+		<< ", totalAskingValue=" << snapshot.totalAskingPrice;
+
+	if (ConfigManager::instance()->getBool("Fury.Economy.DryRun", true)) {
+		auto listings = FuryMarketObserver::collectListings(&items);
+		const float defaultDemand = ConfigManager::instance()->getFloat("Fury.Economy.DefaultDemand", 0.5f);
+		const float purchaseThreshold = ConfigManager::instance()->getFloat("Fury.Economy.PurchaseThreshold", 0.62f);
+		auto dryRun = FuryMarketDryRun::evaluate(listings, defaultDemand, purchaseThreshold);
+
+		info(true)
+			<< "FURY economy dry-run: eligible=" << dryRun.eligibleListings
+			<< ", wouldPurchase=" << dryRun.wouldPurchase
+			<< ", defaultDemand=" << defaultDemand
+			<< ", purchaseThreshold=" << purchaseThreshold;
+	}
+
+	int tickSeconds = ConfigManager::instance()->getInt("Fury.Economy.TickSeconds", 600);
+
+	if (tickSeconds < 10)
+		tickSeconds = 10;
+
+	Reference<FuryMarketTickTask*> nextTask = new FuryMarketTickTask(_this.getReferenceUnsafeStaticCast());
+	nextTask->schedule(tickSeconds * 1000);
 }
 
 void AuctionManagerImplementation::checkVendorItems(bool startupTask) {
@@ -302,33 +347,6 @@ void AuctionManagerImplementation::checkVendorItems(bool startupTask) {
 	info("Checking " + String::valueOf(items.size()) + " vendor terminals", true);
 
 	doAuctionMaint(&items, "vendor", startupTask);
-
-	if (ConfigManager::instance()->getBool("Fury.Economy.ObserveVendorMarket", false)) {
-		auto snapshot = FuryMarketObserver::scan(&items);
-
-		info(true)
-			<< "FURY economy observer: terminals=" << snapshot.terminalCount
-			<< ", activeListings=" << snapshot.activeListings
-			<< ", fixedPrice=" << snapshot.fixedPriceListings
-			<< ", auctions=" << snapshot.auctionListings
-			<< ", minPrice=" << snapshot.minPrice
-			<< ", maxPrice=" << snapshot.maxPrice
-			<< ", averagePrice=" << snapshot.averagePrice()
-			<< ", totalAskingValue=" << snapshot.totalAskingPrice;
-
-		if (ConfigManager::instance()->getBool("Fury.Economy.DryRun", true)) {
-			auto listings = FuryMarketObserver::collectListings(&items);
-			const float defaultDemand = ConfigManager::instance()->getFloat("Fury.Economy.DefaultDemand", 0.5f);
-			const float purchaseThreshold = ConfigManager::instance()->getFloat("Fury.Economy.PurchaseThreshold", 0.62f);
-			auto dryRun = FuryMarketDryRun::evaluate(listings, defaultDemand, purchaseThreshold);
-
-			info(true)
-				<< "FURY economy dry-run: eligible=" << dryRun.eligibleListings
-				<< ", wouldPurchase=" << dryRun.wouldPurchase
-				<< ", defaultDemand=" << defaultDemand
-				<< ", purchaseThreshold=" << purchaseThreshold;
-		}
-	}
 
 	auto elapsed = timer.stopMs();
 
