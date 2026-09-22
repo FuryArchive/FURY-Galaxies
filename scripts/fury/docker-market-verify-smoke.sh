@@ -18,10 +18,13 @@ cat > "${FURY_CANARY_PROBE_ROOT}/baseline.json" <<'EOF'
   "listingForSale": true,
   "expectedEligible": true,
   "auctionItemObjectPresent": true,
-  "auctionItemObjectId": 9001,
+  "auctionItemObjectId": 18446744073709551615,
+  "auctionItemObjectIdText": "18446744073709551615",
   "soldObjectPresent": true,
-  "soldObjectId": 1001,
-  "vendorId": 2001,
+  "soldObjectId": 18446744073709551614,
+  "soldObjectIdText": "18446744073709551614",
+  "vendorId": 9223372036854775808,
+  "vendorIdText": "9223372036854775808",
   "comparisonKey": 42,
   "grossPrice": 1000,
   "units": 2,
@@ -31,8 +34,9 @@ cat > "${FURY_CANARY_PROBE_ROOT}/baseline.json" <<'EOF'
   "cityTreasury": 5000.0,
   "demandKey": "1:2:42",
   "demand": 0.5,
-  "persistentObjectIds": [1001, 1002],
-  "persistentObjectPresence": {"1001": true, "1002": true},
+  "persistentObjectIds": [18446744073709551614, 18446744073709551613],
+  "persistentObjectIdsText": ["18446744073709551614", "18446744073709551613"],
+  "persistentObjectPresence": {"18446744073709551614": true, "18446744073709551613": true},
   "expectedSellerBankAfter": 1050,
   "expectedSellerCashAfter": 10,
   "expectedCityTreasuryAfter": 5050.0,
@@ -47,10 +51,13 @@ cat > "${FURY_CANARY_PROBE_ROOT}/rollback.json" <<'EOF'
   "listingPresent": true,
   "listingForSale": true,
   "auctionItemObjectPresent": true,
-  "auctionItemObjectId": 9001,
+  "auctionItemObjectId": 18446744073709551615,
+  "auctionItemObjectIdText": "18446744073709551615",
   "soldObjectPresent": true,
-  "soldObjectId": 1001,
-  "vendorId": 2001,
+  "soldObjectId": 18446744073709551614,
+  "soldObjectIdText": "18446744073709551614",
+  "vendorId": 9223372036854775808,
+  "vendorIdText": "9223372036854775808",
   "comparisonKey": 42,
   "grossPrice": 1000,
   "units": 2,
@@ -60,7 +67,7 @@ cat > "${FURY_CANARY_PROBE_ROOT}/rollback.json" <<'EOF'
   "cityTreasury": 5000.0,
   "demandKey": "1:2:42",
   "demand": 0.5,
-  "persistentObjectPresence": {"1001": true, "1002": true}
+  "persistentObjectPresence": {"18446744073709551614": true, "18446744073709551613": true}
 }
 EOF
 
@@ -76,9 +83,12 @@ cat > "${FURY_CANARY_PROBE_ROOT}/committed.json" <<'EOF'
   "cityPresent": true,
   "cityTreasury": 5050.0,
   "demand": 0.4,
-  "persistentObjectPresence": {"1001": false, "1002": false}
+  "persistentObjectPresence": {"18446744073709551614": false, "18446744073709551613": false}
 }
 EOF
+
+[ "$(jq -r '.auctionItemObjectIdText' "${FURY_CANARY_PROBE_ROOT}/baseline.json")" = "18446744073709551615" ]
+[ "$(jq -r '.persistentObjectIdsText[0]' "${FURY_CANARY_PROBE_ROOT}/baseline.json")" = "18446744073709551614" ]
 
 "${verify}" 3 baseline rollback
 "${verify}" 6 baseline committed

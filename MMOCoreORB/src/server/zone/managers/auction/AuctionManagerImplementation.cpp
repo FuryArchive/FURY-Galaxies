@@ -551,13 +551,17 @@ bool AuctionManagerImplementation::createFuryMarketFixture() {
 		output["ready"] = true;
 		output["recovered"] = recovered;
 		output["sellerId"] = sellerId;
+		output["sellerIdText"] = String::valueOf(sellerId).toCharArray();
 		output["sellerName"] = sellerName.toCharArray();
 		output["vendorId"] = vendor->getObjectID();
+		output["vendorIdText"] = String::valueOf(vendor->getObjectID()).toCharArray();
 		output["vendorIsBazaar"] = vendor->isBazaarTerminal();
 		output["template"] = templatePath.toCharArray();
 		output["comparisonKey"] = templateCrc;
 		output["targetListingId"] = targetListingId;
+		output["targetListingIdText"] = String::valueOf(targetListingId).toCharArray();
 		output["targetAuctionRecordId"] = targetAuctionRecordId;
+		output["targetAuctionRecordIdText"] = String::valueOf(targetAuctionRecordId).toCharArray();
 		output["targetPrice"] = targetPrice;
 		output["comparablePrice"] = comparablePrice;
 		output["demand"] = fixtureDemand;
@@ -570,9 +574,15 @@ bool AuctionManagerImplementation::createFuryMarketFixture() {
 		output["wouldPurchase"] = targetDecision->decision.purchase;
 
 		JSONSerializationType comparables = JSONSerializationType::array();
-		for (uint64 oid : comparableListingIds)
+		JSONSerializationType comparablesText = JSONSerializationType::array();
+
+		for (uint64 oid : comparableListingIds) {
 			comparables.push_back(oid);
+			comparablesText.push_back(String::valueOf(oid).toCharArray());
+		}
+
 		output["comparableListingIds"] = comparables;
+		output["comparableListingIdsText"] = comparablesText;
 
 		try {
 			std::ofstream stream(outputPath.toCharArray());
@@ -819,7 +829,9 @@ void AuctionManagerImplementation::writeFuryCanaryProbe() {
 	probe["version"] = 1;
 	probe["scopeValid"] = scope.valid;
 	probe["listingId"] = scope.listingId;
+	probe["listingIdText"] = String::valueOf(scope.listingId).toCharArray();
 	probe["ownerId"] = scope.ownerId;
+	probe["ownerIdText"] = String::valueOf(scope.ownerId).toCharArray();
 	probe["baselineLoaded"] = baselineLoaded;
 
 	if (!scope.valid || scope.listingId == 0 || scope.ownerId == 0) {
@@ -981,10 +993,14 @@ void AuctionManagerImplementation::writeFuryCanaryProbe() {
 	}
 
 	probe["auctionItemObjectId"] = auctionItemObjectId;
+	probe["auctionItemObjectIdText"] = String::valueOf(auctionItemObjectId).toCharArray();
 	probe["soldObjectId"] = soldObjectId;
+	probe["soldObjectIdText"] = String::valueOf(soldObjectId).toCharArray();
 	probe["vendorId"] = vendorId;
+	probe["vendorIdText"] = String::valueOf(vendorId).toCharArray();
 	probe["planetCrc"] = planetCrc;
 	probe["regionId"] = regionId;
+	probe["regionIdText"] = String::valueOf(regionId).toCharArray();
 	probe["comparisonKey"] = comparisonKey;
 	probe["grossPrice"] = grossPrice;
 	probe["units"] = units > 0 ? units : 1;
@@ -1015,6 +1031,8 @@ void AuctionManagerImplementation::writeFuryCanaryProbe() {
 		bankCredits = sellerCredits->getBankCredits();
 		cashCredits = sellerCredits->getCashCredits();
 		probe["sellerCreditOwnerId"] = sellerCredits->getOwnerObjectID();
+		probe["sellerCreditOwnerIdText"] =
+			String::valueOf(sellerCredits->getOwnerObjectID()).toCharArray();
 	}
 
 	probe["sellerBank"] = bankCredits;
@@ -1046,18 +1064,22 @@ void AuctionManagerImplementation::writeFuryCanaryProbe() {
 	probe["demand"] = demand;
 
 	JSONSerializationType objectIds = JSONSerializationType::array();
+	JSONSerializationType objectIdsText = JSONSerializationType::array();
 	JSONSerializationType objectPresence = JSONSerializationType::object();
 
 	for (int i = 0; i < persistentObjectIds.size(); ++i) {
 		const uint64 objectId = persistentObjectIds.get(i);
+		const String objectIdText = String::valueOf(objectId);
 		objectIds.push_back(objectId);
+		objectIdsText.push_back(objectIdText.toCharArray());
 
 		ManagedReference<SceneObject*> object = zoneServer->getObject(objectId);
-		objectPresence[String::valueOf(objectId).toCharArray()] =
+		objectPresence[objectIdText.toCharArray()] =
 			object != nullptr;
 	}
 
 	probe["persistentObjectIds"] = objectIds;
+	probe["persistentObjectIdsText"] = objectIdsText;
 	probe["persistentObjectPresence"] = objectPresence;
 
 	if (!baselineLoaded) {

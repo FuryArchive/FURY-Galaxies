@@ -68,7 +68,7 @@ if [ "${stage}" -ge 1 ] && [ "${stage}" -le 5 ]; then
     jq -e '.auctionItemObjectPresent == true and .soldObjectPresent == true'         "${observed}" >/dev/null ||
         die "AuctionItem or sold root object is missing after rollback"
 
-    for field in auctionItemObjectId soldObjectId vendorId comparisonKey                  grossPrice units sellerBank sellerCash demandKey; do
+    for field in auctionItemObjectIdText soldObjectIdText vendorIdText comparisonKey                  grossPrice units sellerBank sellerCash demandKey; do
         eq_field "${field}"
     done
 
@@ -84,7 +84,7 @@ if [ "${stage}" -ge 1 ] && [ "${stage}" -le 5 ]; then
         present="$(jq -r --arg oid "${oid}" '.persistentObjectPresence[$oid] // false' "${observed}")"
         [ "${present}" = "true" ] ||
             die "persistent sold object ${oid} is missing after rollback"
-    done < <(jq -r '.persistentObjectIds[] | tostring' "${baseline}")
+    done < <(jq -r '.persistentObjectIdsText[]' "${baseline}")
 
     echo "FURY verify PASS: stage ${stage} rolled back completely"
     exit 0
@@ -114,6 +114,6 @@ while IFS= read -r oid; do
     present="$(jq -r --arg oid "${oid}" '.persistentObjectPresence[$oid] // false' "${observed}")"
     [ "${present}" = "false" ] ||
         die "persistent sold object ${oid} survived committed deletion"
-done < <(jq -r '.persistentObjectIds[] | tostring' "${baseline}")
+done < <(jq -r '.persistentObjectIdsText[]' "${baseline}")
 
 echo "FURY verify PASS: stage ${stage} recovered as one committed settlement"
