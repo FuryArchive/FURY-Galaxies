@@ -94,3 +94,28 @@ FURY settlement must instead:
 3. call `sellingObject->destroyObjectFromDatabase(true)` directly inside the same settlement task.
 
 This keeps auction-record deletion and sold-object deletion in the same local transaction as credits/tax/demand.
+
+
+## Correction: Task exceptions are not automatic rollback
+
+Engine3's non-STM `Task::doExecute()` catches exceptions and then still calls
+`ObjectDatabaseManager::commitLocalTransaction()`. Therefore throwing an
+exception is **not** a rollback mechanism.
+
+`abortLocalTransaction()` clears pending database writes but does not revert
+already-mutated in-memory objects. A graceful Core3 shutdown is also unsafe for
+this case because shutdown performs a full object backup from RAM.
+
+For FURY settlement, an unexpected exception after the mutation boundary uses
+fail-stop semantics:
+
+1. `abortLocalTransaction()` discards every pending persistent write from the
+   current Task;
+2. an emergency message is flushed to logs;
+3. `System::abort()` terminates the process immediately, without a graceful
+   save of the mutated RAM image;
+4. the process supervisor must restart Core3 from the last committed Berkeley
+   state.
+
+Validation failures before the first mutation remain normal early returns and
+never trigger fail-stop.

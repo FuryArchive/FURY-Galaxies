@@ -124,6 +124,15 @@ class AuctionManager extends ManagedService implements Logger {
 	public native void runFuryMarketTick();
 
 	@local
+	public native void settleFuryMarketListing(
+		unsigned long listingId,
+		unsigned long expectedVendorId,
+		unsigned long expectedOwnerId,
+		int expectedPrice,
+		int expectedUnits,
+		unsigned int expectedComparisonKey);
+
+	@local
 	private native void initializeFuryEconomyState();
 
 	@local

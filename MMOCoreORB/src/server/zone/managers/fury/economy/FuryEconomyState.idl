@@ -42,6 +42,9 @@ class FuryEconomyState extends ManagedObject {
 	}
 
 	@preLocked
+	public native int recoverDemand(float target, float recoveryPerTick);
+
+	@preLocked
 	public void removeDemand(final string key) {
 		if (demand.contains(key))
 			demand.drop(key);

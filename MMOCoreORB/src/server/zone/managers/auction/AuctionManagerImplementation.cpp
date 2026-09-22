@@ -9,9 +9,14 @@
 #include "server/zone/managers/fury/economy/FuryMarketObserver.h"
 #include "server/zone/managers/fury/economy/FuryMarketDryRun.h"
 #include "server/zone/managers/fury/economy/FuryMarketTickTask.h"
+#include "server/zone/managers/fury/economy/FuryMarketSettlementTask.h"
+#include "server/zone/managers/fury/economy/FurySettlementPlan.h"
+#include "server/zone/managers/fury/economy/FuryDemandModel.h"
+#include "server/zone/managers/fury/economy/FuryItemQuality.h"
 #include "server/zone/managers/fury/economy/FuryEconomyState.h"
 #include "server/zone/managers/auction/AuctionsMap.h"
 #include "server/zone/managers/object/ObjectManager.h"
+#include "server/zone/managers/credit/CreditManager.h"
 #include "templates/manager/TemplateManager.h"
 #include "server/zone/managers/player/PlayerManager.h"
 #include "server/zone/objects/auction/AuctionItem.h"
@@ -39,6 +44,15 @@
 #include "AuctionSearchTask.h"
 #include "server/zone/objects/factorycrate/FactoryCrate.h"
 #include "server/zone/objects/transaction/TransactionLog.h"
+
+namespace {
+String makeFuryDemandKey(uint32 planetCrc, uint64 regionId, uint32 comparisonKey) {
+	StringBuffer key;
+	key << planetCrc << ":" << regionId << ":" << comparisonKey;
+	return key.toString();
+}
+}
+
 
 void AuctionManagerImplementation::initialize() {
 	Locker locker(_this.getReferenceUnsafeStaticCast());
@@ -361,28 +375,39 @@ void AuctionManagerImplementation::runFuryMarketTick() {
 		<< ", averagePrice=" << snapshot.averagePrice()
 		<< ", totalAskingValue=" << snapshot.totalAskingPrice;
 
-	if (ConfigManager::instance()->getBool("Fury.Economy.DryRun", true)) {
+	const bool dryRunEnabled = ConfigManager::instance()->getBool("Fury.Economy.DryRun", true);
+	const bool executePurchases = ConfigManager::instance()->getBool("Fury.Economy.ExecutePurchases", false);
+
+	if (dryRunEnabled || executePurchases) {
 		auto listings = FuryMarketObserver::collectListings(&items, zoneServer);
 		const float defaultDemand = ConfigManager::instance()->getFloat("Fury.Economy.DefaultDemand", 0.5f);
 		const float purchaseThreshold = ConfigManager::instance()->getFloat("Fury.Economy.PurchaseThreshold", 0.62f);
 
 		if (furyEconomyState != nullptr) {
 			Locker demandLocker(furyEconomyState);
+			const float recoveryPerTick =
+				ConfigManager::instance()->getFloat("Fury.Economy.DemandRecoveryPerTick", 0.02f);
+			const int recoveredEntries =
+				furyEconomyState->recoverDemand(defaultDemand, recoveryPerTick);
+
+			if (recoveredEntries > 0)
+				info(true) << "FURY economy: recovered " << recoveredEntries << " demand entrie(s)";
 
 			for (auto& listing : listings) {
-				StringBuffer key;
-				key << listing.planetCrc << ":" << listing.regionId << ":" << listing.comparisonKey;
-
-				listing.demand = furyEconomyState->getDemand(key.toString(), defaultDemand);
+				listing.demand = furyEconomyState->getDemand(
+					makeFuryDemandKey(listing.planetCrc, listing.regionId, listing.comparisonKey),
+					defaultDemand);
 				listing.demandKnown = true;
 			}
 		}
 
-		auto dryRun = FuryMarketDryRun::evaluate(listings, defaultDemand, purchaseThreshold);
+		auto evaluation = FuryMarketDryRun::evaluate(listings, defaultDemand, purchaseThreshold);
 
 		info(true)
-			<< "FURY economy dry-run: eligible=" << dryRun.eligibleListings
-			<< ", wouldPurchase=" << dryRun.wouldPurchase
+			<< "FURY economy evaluation: eligible=" << evaluation.eligibleListings
+			<< ", wouldPurchase=" << evaluation.wouldPurchase
+			<< ", dryRun=" << dryRunEnabled
+			<< ", executePurchases=" << executePurchases
 			<< ", defaultDemand=" << defaultDemand
 			<< ", purchaseThreshold=" << purchaseThreshold;
 
@@ -391,11 +416,11 @@ void AuctionManagerImplementation::runFuryMarketTick() {
 		if (logLimit < 0)
 			logLimit = 0;
 
-		const int decisionCount = static_cast<int>(dryRun.decisions.size());
+		const int decisionCount = static_cast<int>(evaluation.decisions.size());
 		const int decisionsToLog = logLimit < decisionCount ? logLimit : decisionCount;
 
 		for (int i = 0; i < decisionsToLog; ++i) {
-			const auto& entry = dryRun.decisions[i];
+			const auto& entry = evaluation.decisions[i];
 
 			info(true)
 				<< "FURY market decision: listing=" << entry.listing.listingId
@@ -417,6 +442,74 @@ void AuctionManagerImplementation::runFuryMarketTick() {
 				<< ", score=" << entry.decision.score
 				<< ", wouldPurchase=" << entry.decision.purchase;
 		}
+
+		if (executePurchases) {
+			if (dryRunEnabled) {
+				warning("FURY economy: ExecutePurchases requested but DryRun is still enabled; purchases suppressed");
+			} else if (furyEconomyState == nullptr ||
+				!ConfigManager::instance()->getBool("Fury.Economy.PersistDemand", false)) {
+				warning("FURY economy: purchases require PersistDemand=1 and a loaded FuryEconomyState");
+			} else {
+				int maxPurchases = ConfigManager::instance()->getInt("Fury.Economy.MaxPurchasesPerTick", 5);
+
+				if (maxPurchases < 0)
+					maxPurchases = 0;
+
+				int scheduled = 0;
+				long long scheduledGross = 0;
+				int minComparables =
+					ConfigManager::instance()->getInt("Fury.Economy.MinComparablesForPurchase", 2);
+				int maxGrossPerPurchase =
+					ConfigManager::instance()->getInt("Fury.Economy.MaxGrossPricePerPurchase", 250000);
+				int maxGrossPerTick =
+					ConfigManager::instance()->getInt("Fury.Economy.MaxGrossCreditsPerTick", 500000);
+
+				if (minComparables < 1)
+					minComparables = 1;
+
+				if (maxGrossPerPurchase < 0)
+					maxGrossPerPurchase = 0;
+
+				if (maxGrossPerTick < 0)
+					maxGrossPerTick = 0;
+
+				const bool requireKnownQuality =
+					ConfigManager::instance()->getBool("Fury.Economy.RequireKnownQualityForPurchases", true);
+
+				for (const auto& entry : evaluation.decisions) {
+					if (!entry.decision.purchase || scheduled >= maxPurchases)
+						continue;
+
+					if (requireKnownQuality && !entry.listing.qualitySignalKnown)
+						continue;
+
+					if (entry.comparableListings < minComparables)
+						continue;
+
+					if (entry.listing.askingPrice <= 0 ||
+						entry.listing.askingPrice > maxGrossPerPurchase ||
+						scheduledGross + entry.listing.askingPrice > maxGrossPerTick) {
+						continue;
+					}
+
+					Reference<FuryMarketSettlementTask*> task = new FuryMarketSettlementTask(
+						_this.getReferenceUnsafeStaticCast(),
+						entry.listing.listingId,
+						entry.listing.vendorId,
+						entry.listing.ownerId,
+						entry.listing.askingPrice,
+						entry.listing.units,
+						entry.listing.comparisonKey);
+
+					task->schedule(1);
+					scheduled++;
+					scheduledGross += entry.listing.askingPrice;
+				}
+
+				if (scheduled > 0)
+					info(true) << "FURY economy: scheduled " << scheduled << " settlement task(s)";
+			}
+		}
 	}
 
 	int tickSeconds = ConfigManager::instance()->getInt("Fury.Economy.TickSeconds", 600);
@@ -426,6 +519,189 @@ void AuctionManagerImplementation::runFuryMarketTick() {
 
 	Reference<FuryMarketTickTask*> nextTask = new FuryMarketTickTask(_this.getReferenceUnsafeStaticCast());
 	nextTask->schedule(tickSeconds * 1000);
+}
+
+void AuctionManagerImplementation::settleFuryMarketListing(
+	uint64 listingId,
+	uint64 expectedVendorId,
+	uint64 expectedOwnerId,
+	int expectedPrice,
+	int expectedUnits,
+	uint32 expectedComparisonKey) {
+
+	if (!ConfigManager::instance()->getBool("Fury.Economy.ExecutePurchases", false) ||
+		ConfigManager::instance()->getBool("Fury.Economy.DryRun", true) ||
+		!ConfigManager::instance()->getBool("Fury.Economy.PersistDemand", false) ||
+		furyEconomyState == nullptr) {
+		return;
+	}
+
+	Reference<AuctionItem*> item = auctionMap->getItem(listingId);
+
+	if (item == nullptr)
+		return;
+
+	Locker itemLocker(item);
+
+	if (item->getStatus() != AuctionItem::FORSALE ||
+		item->isAuction() ||
+		item->getVendorID() != expectedVendorId ||
+		item->getOwnerID() != expectedOwnerId ||
+		item->getPrice() != expectedPrice) {
+		return;
+	}
+
+	const int maxGrossPerPurchase =
+		ConfigManager::instance()->getInt("Fury.Economy.MaxGrossPricePerPurchase", 250000);
+
+	if (maxGrossPerPurchase <= 0 || item->getPrice() > maxGrossPerPurchase)
+		return;
+
+	ManagedReference<SceneObject*> vendor = zoneServer->getObject(item->getVendorID());
+	ManagedReference<SceneObject*> sellingObject = zoneServer->getObject(item->getAuctionedItemObjectID());
+
+	if (vendor == nullptr || vendor->getZone() == nullptr || sellingObject == nullptr)
+		return;
+
+	int currentUnits = 1;
+
+	if (item->isFactoryCrate() && sellingObject->isFactoryCrate()) {
+		ManagedReference<FactoryCrate*> crate = cast<FactoryCrate*>(sellingObject.get());
+
+		if (crate != nullptr && crate->getUseCount() > 0)
+			currentUnits = crate->getUseCount();
+	}
+
+	if (currentUnits != (expectedUnits > 0 ? expectedUnits : 1))
+		return;
+
+	const int effectiveItemType =
+		item->isFactoryCrate() && item->getCratedItemType() > 0
+			? item->getCratedItemType()
+			: item->getItemType();
+
+	auto quality = FuryItemQualityExtractor::inspect(sellingObject.get());
+	const uint32 currentComparisonKey =
+		quality.templateCrc != 0
+			? quality.templateCrc
+			: static_cast<uint32>(effectiveItemType);
+
+	if (expectedComparisonKey != 0 && currentComparisonKey != expectedComparisonKey)
+		return;
+
+	if (ConfigManager::instance()->getBool("Fury.Economy.RequireKnownQualityForPurchases", true) &&
+		!quality.known) {
+		return;
+	}
+
+	Reference<CreditObject*> sellerCredits = CreditManager::getCreditObject(expectedOwnerId);
+
+	ManagedReference<CityRegion*> city = vendor->getCityRegion().get();
+
+	FurySettlementInput settlementInput;
+	settlementInput.grossPrice = item->getPrice();
+	settlementInput.citySalesTaxPercent = city != nullptr ? city->getSalesTax() : 0.0f;
+	settlementInput.forSale = true;
+	settlementInput.auction = false;
+	settlementInput.sellerExists = sellerCredits != nullptr;
+	settlementInput.itemExists = true;
+
+	const auto plan = FurySettlementPlanner::plan(settlementInput);
+
+	if (!plan.eligible)
+		return;
+
+	const uint32 planetCrc = vendor->getPlanetCRC();
+	const uint64 regionId = city != nullptr ? city->getObjectID() : 0;
+	const String demandKey = makeFuryDemandKey(planetCrc, regionId, currentComparisonKey);
+
+	TransactionLog trx(expectedOwnerId, TrxCode::BAZAARSYSTEM, plan.sellerNet, false);
+	trx.setAutoCommit(false);
+	trx.addRelatedObject(sellingObject.get(), true);
+	trx.addState("furyMarket", true);
+	trx.addState("listingId", listingId);
+	trx.addState("grossPrice", plan.grossPrice);
+	trx.addState("cityTax", plan.tax);
+	trx.addState("sellerNet", plan.sellerNet);
+	trx.addState("units", currentUnits);
+	trx.addState("comparisonKey", currentComparisonKey);
+	trx.addState("planetCrc", planetCrc);
+	trx.addState("regionId", regionId);
+
+	const int failureStage =
+		ConfigManager::instance()->getInt("Fury.Economy.FailureInjectionStage", 0);
+
+	auto injectFailure = [failureStage] (int stage) {
+		if (failureStage == stage)
+			throw Exception("FURY settlement failure injection stage " + String::valueOf(stage));
+	};
+
+	try {
+		auctionMap->deleteItem(vendor, item, false);
+		auctionMap->removeFromCommodityLimit(item);
+		itemLocker.release();
+		injectFailure(1);
+
+		{
+			Locker creditLocker(sellerCredits);
+			sellerCredits->addBankCredits(plan.sellerNet, true);
+		}
+		injectFailure(2);
+
+		if (city != nullptr && !city->isClientRegion() && plan.tax > 0) {
+			Locker cityLocker(city);
+			city->addToCityTreasury(plan.tax);
+		}
+		injectFailure(3);
+
+		{
+			Locker demandLocker(furyEconomyState);
+
+			FuryDemandState demandState;
+			demandState.current = furyEconomyState->getDemand(
+				demandKey,
+				ConfigManager::instance()->getFloat("Fury.Economy.DefaultDemand", 0.5f));
+			demandState.target = ConfigManager::instance()->getFloat("Fury.Economy.DefaultDemand", 0.5f);
+			demandState.purchaseImpact =
+				ConfigManager::instance()->getFloat("Fury.Economy.PurchaseImpact", 0.05f);
+
+			const auto nextDemand = FuryDemandModel::applyPurchase(demandState, currentUnits);
+			furyEconomyState->setDemand(demandKey, nextDemand.current);
+		}
+		injectFailure(4);
+
+		sellingObject->destroyObjectFromDatabase(true);
+		injectFailure(5);
+
+		trx.commit();
+
+		info(true)
+			<< "FURY economy purchase settled: listing=" << listingId
+			<< ", owner=" << expectedOwnerId
+			<< ", gross=" << plan.grossPrice
+			<< ", tax=" << plan.tax
+			<< ", sellerNet=" << plan.sellerNet
+			<< ", units=" << currentUnits
+			<< ", comparisonKey=" << currentComparisonKey;
+	} catch (const Exception& e) {
+		ObjectDatabaseManager::instance()->abortLocalTransaction();
+
+		Logger::console.error()
+			<< "FURY ECONOMY FAIL-STOP after mutation began; pending DB writes aborted. "
+			<< "listing=" << listingId << ", error=" << e.getMessage();
+
+		System::flushStreams();
+		System::abort();
+	} catch (...) {
+		ObjectDatabaseManager::instance()->abortLocalTransaction();
+
+		Logger::console.error()
+			<< "FURY ECONOMY FAIL-STOP after mutation began; pending DB writes aborted. "
+			<< "listing=" << listingId << ", unknown exception";
+
+		System::flushStreams();
+		System::abort();
+	}
 }
 
 void AuctionManagerImplementation::checkVendorItems(bool startupTask) {

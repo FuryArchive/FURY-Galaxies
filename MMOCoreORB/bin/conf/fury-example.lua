@@ -15,4 +15,12 @@ Fury.Economy = {
 	DefaultDemand = 0.50,
 	PurchaseThreshold = 0.62,
 	DryRunLogLimit = 20,
+	MaxPurchasesPerTick = 5,
+	PurchaseImpact = 0.05,
+	DemandRecoveryPerTick = 0.02,
+	RequireKnownQualityForPurchases = 1,
+	MinComparablesForPurchase = 2,
+	MaxGrossPricePerPurchase = 250000,
+	MaxGrossCreditsPerTick = 500000,
+	FailureInjectionStage = 0,
 }
