@@ -59,6 +59,10 @@ FuryItemQuality FuryItemQualityExtractor::inspect(SceneObject* object) {
 
 	result.conditionRatio = conditionRatio(tangible);
 
+	// Core3's public weapon/armor getters already apply condition degradation
+	// (and slicing where relevant). Keep conditionRatio for diagnostics only;
+	// multiplying by it again would penalize damaged items twice.
+
 	if (subject->isWeaponObject()) {
 		ManagedReference<WeaponObject*> weapon = cast<WeaponObject*>(subject);
 
@@ -75,7 +79,7 @@ FuryItemQuality FuryItemQualityExtractor::inspect(SceneObject* object) {
 
 		result.known = true;
 		result.kind = FuryItemQualityKind::Weapon;
-		result.rawSignal = (averageDamage / speed) * result.conditionRatio;
+		result.rawSignal = averageDamage / speed;
 		return result;
 	}
 
@@ -98,7 +102,7 @@ FuryItemQuality FuryItemQualityExtractor::inspect(SceneObject* object) {
 
 		result.known = true;
 		result.kind = FuryItemQualityKind::Armor;
-		result.rawSignal = (protectionSum / 9.0f) * result.conditionRatio;
+		result.rawSignal = protectionSum / 9.0f;
 		return result;
 	}
 
