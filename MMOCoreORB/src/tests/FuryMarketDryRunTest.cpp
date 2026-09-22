@@ -53,3 +53,22 @@ TEST(FuryMarketDryRunTest, DifferentTypesGetIndependentReferencePrices) {
 	EXPECT_EQ(result.decisions[0].referencePrice, 1000);
 	EXPECT_EQ(result.decisions[1].referencePrice, 100);
 }
+
+TEST(FuryMarketDryRunTest, MedianPriceResistsSingleExtremeListing) {
+	std::vector<FuryMarketListing> listings;
+
+	for (int i = 0; i < 3; ++i) {
+		FuryMarketListing item;
+		item.listingId = 100 + i;
+		item.effectiveItemType = 300;
+		item.askingPrice = (i == 0 ? 900 : (i == 1 ? 1000 : 999999));
+		listings.push_back(item);
+	}
+
+	auto result = FuryMarketDryRun::evaluate(listings, 0.5f, 0.60f);
+
+	ASSERT_EQ(result.decisions.size(), 3u);
+	EXPECT_EQ(result.decisions[0].referencePrice, 1000);
+	EXPECT_EQ(result.decisions[1].referencePrice, 1000);
+	EXPECT_EQ(result.decisions[2].referencePrice, 1000);
+}
