@@ -52,35 +52,75 @@ Each domain should separate:
 ## Feature flags
 FURY features are disabled by default until validated.
 
-Initial keys:
+Current economy controls:
 - `Fury.Economy.ObserveVendorMarket`
 - `Fury.Economy.TickSeconds`
 - `Fury.Economy.DryRun`
+- `Fury.Economy.ExecutePurchases`
+- `Fury.Economy.PersistDemand`
+- `Fury.Economy.CanaryOnly`
+- `Fury.Economy.CanaryListingId`
+- `Fury.Economy.CanaryOwnerId`
+- `Fury.Economy.RequireKnownQualityForPurchases`
+- `Fury.Economy.MinComparablesForPurchase`
+- `Fury.Economy.MaxPurchasesPerTick`
+- `Fury.Economy.MaxGrossPricePerPurchase`
+- `Fury.Economy.MaxGrossCreditsPerTick`
+- `Fury.Economy.FailureInjectionStage`
+
+Default execution posture is fail-closed:
+`DryRun=1`, `ExecutePurchases=0`, `PersistDemand=0`,
+`CanaryOnly=1`, with no canary selector configured.
 
 ## Economy vertical slice
 
-Phase 0 — observe:
+### Phase 0 — observe — implemented
 - scan native vendor listings;
-- produce a market snapshot;
+- produce market snapshots;
 - no mutation.
 
-Phase 1 — score:
-- classify listing category;
-- calculate deterministic purchase score;
-- emit dry-run decisions.
+### Phase 1 — score — implemented
+- exact-template comparison groups;
+- factory-crate comparison on per-unit price while retaining gross settlement price;
+- deterministic purchase score;
+- weapon/armor quality extraction;
+- dry-run decisions.
 
-Phase 2 — settle:
-- execute a purchase using Core3 ownership/credit primitives;
-- preserve seller mail/vendor behavior where applicable.
+### Phase 2 — guarded settlement — implementation complete, runtime canary pending
+- fixed-price NPC purchases only;
+- weapon/armor categories only by default;
+- live listing/product revalidation after cross-lock acquisition;
+- live auction-map identity revalidation;
+- seller/city capacity guards;
+- explicit canary execution scope;
+- seller notification only after durable commit.
 
-Phase 3 — persist demand:
-- regional demand survives restart;
-- purchases feed back into demand.
+Settlement durability does not rely on Task exception semantics. FURY explicitly
+serializes seller credits, city treasury and demand plus AuctionItem/sold-object
+deletes into the worker-local database transaction, then uses one synchronous
+Berkeley commit. Pre-commit failure injection aborts pending DB writes and
+fail-stops the process; post-commit stage 6 verifies the opposite recovery
+boundary.
 
-Phase 4 — simulation:
-- city/planet demand;
-- production and consumption;
-- events and trade routes.
+### Phase 3 — persistent regional demand — implementation complete, runtime canary pending
+- persistent `FuryEconomyState`;
+- dry-run may read persistent demand but never mutates it;
+- purchase impact is committed atomically with the purchase;
+- demand recovery runs only in execution mode;
+- settlement rechecks current demand under lock before mutation so multiple
+  decisions from one tick consume demand serially.
+
+### Phase 4 — simulation — future
+- broader item-category valuation;
+- city/planet production and consumption;
+- events and trade routes;
+- longer-horizon credit-source/sink balancing.
+
+### Runtime gate
+Compile/smoke validation is not the release gate for real purchasing.
+`docs/research/runtime-canary-runbook.md` defines the required failure stages
+1-6 and normal-success restart checks. `CanaryOnly=0` must remain out of
+normal configuration until that pass is green.
 
 ## Upstream strategy
 `unstable` stays close to `swgemu/Core3:unstable`.
