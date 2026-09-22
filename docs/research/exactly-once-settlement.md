@@ -79,3 +79,18 @@ Before `ExecutePurchases` can ever default on, test intentional failure injectio
 5. after demand mutation.
 
 After restart, every case must resolve to either the entire sale committed or the entire sale absent — never double payment and never item loss without payment.
+
+
+## Core3 auction deletion trap
+
+Do **not** use `AuctionsMap::deleteItem(vendor, item, true)` for a simulated-market settlement.
+
+With `deleteAuctionedObject=true`, `AuctionItem::destroyAuctionItemFromDatabase` schedules destruction of the underlying sold `SceneObject` as a separate `slowQueue` task. That puts object consumption outside the settlement task transaction.
+
+FURY settlement must instead:
+
+1. hold a strong reference to the sold SceneObject;
+2. call `auctionMap->deleteItem(vendor, item, false)` to remove/delete only the AuctionItem record;
+3. call `sellingObject->destroyObjectFromDatabase(true)` directly inside the same settlement task.
+
+This keeps auction-record deletion and sold-object deletion in the same local transaction as credits/tax/demand.
