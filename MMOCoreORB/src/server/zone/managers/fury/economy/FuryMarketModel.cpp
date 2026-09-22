@@ -25,7 +25,7 @@ FuryMarketDecision FuryMarketModel::evaluate(const FuryMarketDecisionInput& inpu
 	FuryMarketDecision decision;
 
 	decision.demandScore = clamp01(input.demand);
-	decision.qualityScore = clamp01(input.quality);
+	decision.qualityScore = input.qualityKnown ? clamp01(input.quality) : 0.0f;
 
 	if (input.askingPrice <= 0) {
 		decision.priceScore = 1.0f;
@@ -43,10 +43,18 @@ FuryMarketDecision FuryMarketModel::evaluate(const FuryMarketDecisionInput& inpu
 
 	// Demand dominates. Quality matters, but a cheap mediocre item can still
 	// move in a high-demand market.
-	decision.score =
-		(decision.demandScore * 0.50f) +
-		(decision.priceScore * 0.30f) +
-		(decision.qualityScore * 0.20f);
+	if (input.qualityKnown) {
+		decision.score =
+			(decision.demandScore * 0.50f) +
+			(decision.priceScore * 0.30f) +
+			(decision.qualityScore * 0.20f);
+	} else {
+		// Until a category-specific quality extractor exists, do not invent one.
+		// Renormalize demand/price weights instead of assuming average quality.
+		decision.score =
+			(decision.demandScore * 0.625f) +
+			(decision.priceScore * 0.375f);
+	}
 
 	const float threshold = clamp01(purchaseThreshold);
 
