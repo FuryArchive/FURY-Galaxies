@@ -6,6 +6,7 @@
 struct FuryMarketDecisionInput {
 	float demand = 0.5f;
 	float quality = 0.5f;
+	bool qualityKnown = false;
 	int askingPrice = 0;
 	int referencePrice = 0;
 	std::uint64_t listingId = 0;
