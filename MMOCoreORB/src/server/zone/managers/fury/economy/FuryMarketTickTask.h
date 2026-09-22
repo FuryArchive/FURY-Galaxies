@@ -18,9 +18,9 @@ public:
 		if (strongRef == nullptr)
 			return;
 
-		ZoneServer* server = strongRef->getZoneServer();
+		auto* zoneServer = strongRef->getZoneServer();
 
-		if (server == nullptr || server->isServerShuttingDown())
+		if (zoneServer == nullptr || zoneServer->isServerShuttingDown())
 			return;
 
 		strongRef->runFuryMarketTick();
