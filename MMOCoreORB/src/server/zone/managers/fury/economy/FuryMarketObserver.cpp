@@ -48,7 +48,7 @@ FuryMarketSnapshot FuryMarketObserver::scan(TerminalListVector* items) {
 }
 
 
-std::vector<FuryMarketListing> FuryMarketObserver::collectListings(TerminalListVector* items, ZoneServer* zoneServer) {
+std::vector<FuryMarketListing> FuryMarketObserver::collectListings(TerminalListVector* items, server::zone::ZoneServer* zoneServer) {
 	std::vector<FuryMarketListing> listings;
 
 	if (items == nullptr)
