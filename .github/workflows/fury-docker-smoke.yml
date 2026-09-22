@@ -23,8 +23,11 @@ jobs:
           bash -n docker/files/firstboot/functions
           bash -n docker/files/usr/local/bin/fury-market-canary
           bash -n docker/files/usr/local/bin/fury-market-snapshot
+          bash -n docker/files/usr/local/bin/fury-market-probe
+          bash -n docker/files/usr/local/bin/fury-market-verify
           bash -n scripts/fury/docker-market-canary-smoke.sh
           bash -n scripts/fury/docker-market-snapshot-smoke.sh
+          bash -n scripts/fury/docker-market-verify-smoke.sh
 
       - name: Validate FURY clone indirection
         run: |
@@ -47,3 +50,9 @@ jobs:
           chmod +x docker/files/usr/local/bin/fury-market-snapshot
           chmod +x scripts/fury/docker-market-snapshot-smoke.sh
           scripts/fury/docker-market-snapshot-smoke.sh
+
+      - name: Validate FURY market verifier
+        run: |
+          chmod +x docker/files/usr/local/bin/fury-market-verify
+          chmod +x scripts/fury/docker-market-verify-smoke.sh
+          scripts/fury/docker-market-verify-smoke.sh

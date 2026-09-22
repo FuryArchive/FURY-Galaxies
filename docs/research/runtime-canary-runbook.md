@@ -42,6 +42,28 @@ Fury.Economy.DemandRecoveryPerTick = 0.0 -- isolate purchase-impact durability
 
 Leave all normal gross-price and category safety gates enabled.
 
+## Machine-verifiable state probe
+
+Before saving the database baseline, capture the live canary state:
+
+```bash
+fury-market-probe capture <listing-oid> <seller-oid> baseline
+fury-market-snapshot save baseline
+```
+
+After a crash stage, inspect the recovered database with a normal Core3
+initialization followed by native graceful shutdown:
+
+```bash
+fury-market-probe inspect <listing-oid> <seller-oid> baseline stage-3-after
+fury-market-verify 3 baseline stage-3-after
+```
+
+The probe JSON carries exact AuctionItem/sold-object IDs, persistent child
+objects, seller balances, city treasury and demand. The baseline also stores
+the expected one-settlement committed balances and demand, so stage 6 remains
+verifiable even though the listing no longer exists.
+
 ## Reusable baseline snapshot
 
 With Core3 stopped after creating the deterministic test listing, save one
