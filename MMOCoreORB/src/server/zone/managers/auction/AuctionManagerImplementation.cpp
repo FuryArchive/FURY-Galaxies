@@ -390,8 +390,10 @@ void AuctionManagerImplementation::runFuryMarketTick() {
 			const int recoveredEntries =
 				furyEconomyState->recoverDemand(defaultDemand, recoveryPerTick);
 
-			if (recoveredEntries > 0)
+			if (recoveredEntries > 0) {
+				ObjectManager::instance()->updatePersistentObject(furyEconomyState.get());
 				info(true) << "FURY economy: recovered " << recoveredEntries << " demand entrie(s)";
+			}
 
 			for (auto& listing : listings) {
 				listing.demand = furyEconomyState->getDemand(
@@ -560,8 +562,10 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 	ManagedReference<SceneObject*> vendor = zoneServer->getObject(item->getVendorID());
 	ManagedReference<SceneObject*> sellingObject = zoneServer->getObject(item->getAuctionedItemObjectID());
 
-	if (vendor == nullptr || vendor->getZone() == nullptr || sellingObject == nullptr)
+	if (vendor == nullptr || vendor->getZone() == nullptr ||
+		sellingObject == nullptr || !sellingObject->isPersistent()) {
 		return;
+	}
 
 	int currentUnits = 1;
 
@@ -596,37 +600,30 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 
 	Reference<CreditObject*> sellerCredits = CreditManager::getCreditObject(expectedOwnerId);
 
-	ManagedReference<CityRegion*> city = vendor->getCityRegion().get();
-
-	FurySettlementInput settlementInput;
-	settlementInput.grossPrice = item->getPrice();
-	settlementInput.citySalesTaxPercent = city != nullptr ? city->getSalesTax() : 0.0f;
-	settlementInput.forSale = true;
-	settlementInput.auction = false;
-	settlementInput.sellerExists = sellerCredits != nullptr;
-	settlementInput.itemExists = true;
-
-	const auto plan = FurySettlementPlanner::plan(settlementInput);
-
-	if (!plan.eligible)
+	if (sellerCredits == nullptr)
 		return;
 
+	ManagedReference<CityRegion*> city = vendor->getCityRegion().get();
 	const uint32 planetCrc = vendor->getPlanetCRC();
 	const uint64 regionId = city != nullptr ? city->getObjectID() : 0;
 	const String demandKey = makeFuryDemandKey(planetCrc, regionId, currentComparisonKey);
+	const uint64 auctionItemObjectId = item->getObjectID();
 
-	TransactionLog trx(expectedOwnerId, TrxCode::BAZAARSYSTEM, plan.sellerNet, false);
-	trx.setAutoCommit(false);
-	trx.addRelatedObject(sellingObject.get(), true);
-	trx.addState("furyMarket", true);
-	trx.addState("listingId", listingId);
-	trx.addState("grossPrice", plan.grossPrice);
-	trx.addState("cityTax", plan.tax);
-	trx.addState("sellerNet", plan.sellerNet);
-	trx.addState("units", currentUnits);
-	trx.addState("comparisonKey", currentComparisonKey);
-	trx.addState("planetCrc", planetCrc);
-	trx.addState("regionId", regionId);
+	SortedVector<uint64> productObjectIds;
+	productObjectIds.setNoDuplicateInsertPlan();
+	productObjectIds.put(sellingObject->getObjectID());
+
+	SortedVector<uint64> childObjectIds;
+	childObjectIds.setNoDuplicateInsertPlan();
+	sellingObject->getChildrenRecursive(childObjectIds, 50, false, false);
+
+	for (int i = 0; i < childObjectIds.size(); ++i) {
+		const uint64 childId = childObjectIds.get(i);
+		ManagedReference<SceneObject*> child = zoneServer->getObject(childId);
+
+		if (child != nullptr && child->isPersistent())
+			productObjectIds.put(childId);
+	}
 
 	const int failureStage =
 		ConfigManager::instance()->getInt("Fury.Economy.FailureInjectionStage", 0);
@@ -636,72 +633,181 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 			throw Exception("FURY settlement failure injection stage " + String::valueOf(stage));
 	};
 
-	try {
-		auctionMap->deleteItem(vendor, item, false);
-		auctionMap->removeFromCommodityLimit(item);
-		itemLocker.release();
-		injectFailure(1);
+	Locker creditLocker(sellerCredits, item);
+	Locker demandLocker(furyEconomyState, sellerCredits);
 
-		{
-			Locker creditLocker(sellerCredits);
-			sellerCredits->addBankCredits(plan.sellerNet, true);
+	auto commitSettlement = [&] (CityRegion* lockedCity) {
+		FurySettlementInput settlementInput;
+		settlementInput.grossPrice = item->getPrice();
+		settlementInput.citySalesTaxPercent = lockedCity != nullptr ? lockedCity->getSalesTax() : 0.0f;
+		settlementInput.forSale = true;
+		settlementInput.auction = false;
+		settlementInput.sellerExists = true;
+		settlementInput.itemExists = true;
+
+		const auto plan = FurySettlementPlanner::plan(settlementInput);
+
+		if (!plan.eligible)
+			return false;
+
+		const long long sellerCapacity =
+			(static_cast<long long>(CreditObject::CREDITCAP) - sellerCredits->getBankCredits()) +
+			(static_cast<long long>(CreditObject::CREDITCAP) - sellerCredits->getCashCredits());
+
+		if (plan.sellerNet <= 0 || static_cast<long long>(plan.sellerNet) > sellerCapacity) {
+			warning()
+				<< "FURY economy: rejecting listing " << listingId
+				<< " because seller cannot receive full payout of " << plan.sellerNet;
+			return false;
 		}
-		injectFailure(2);
 
-		if (city != nullptr && !city->isClientRegion() && plan.tax > 0) {
-			Locker cityLocker(city);
-			city->addToCityTreasury(plan.tax);
+		if (lockedCity != nullptr && plan.tax > 0 &&
+			lockedCity->getCityTreasury() + plan.tax > 100000000.0) {
+			warning()
+				<< "FURY economy: rejecting listing " << listingId
+				<< " because city treasury cannot receive full tax of " << plan.tax;
+			return false;
 		}
-		injectFailure(3);
 
-		{
-			Locker demandLocker(furyEconomyState);
+		FuryDemandState demandState;
+		demandState.current = furyEconomyState->getDemand(
+			demandKey,
+			ConfigManager::instance()->getFloat("Fury.Economy.DefaultDemand", 0.5f));
+		demandState.target =
+			ConfigManager::instance()->getFloat("Fury.Economy.DefaultDemand", 0.5f);
+		demandState.purchaseImpact =
+			ConfigManager::instance()->getFloat("Fury.Economy.PurchaseImpact", 0.05f);
 
-			FuryDemandState demandState;
-			demandState.current = furyEconomyState->getDemand(
-				demandKey,
-				ConfigManager::instance()->getFloat("Fury.Economy.DefaultDemand", 0.5f));
-			demandState.target = ConfigManager::instance()->getFloat("Fury.Economy.DefaultDemand", 0.5f);
-			demandState.purchaseImpact =
-				ConfigManager::instance()->getFloat("Fury.Economy.PurchaseImpact", 0.05f);
+		const auto nextDemand = FuryDemandModel::applyPurchase(demandState, currentUnits);
+		const int bankBefore = sellerCredits->getBankCredits();
+		const int cashBefore = sellerCredits->getCashCredits();
 
-			const auto nextDemand = FuryDemandModel::applyPurchase(demandState, currentUnits);
+		try {
+			auctionMap->removeItem(vendor, item);
+			auctionMap->removeFromCommodityLimit(item);
+			item->setStatus(AuctionItem::DELETED);
+			injectFailure(1);
+
+			sellerCredits->addBankCredits(plan.sellerNet, false);
+			injectFailure(2);
+
+			if (lockedCity != nullptr && plan.tax > 0)
+				lockedCity->addToCityTreasury(plan.tax);
+			injectFailure(3);
+
 			furyEconomyState->setDemand(demandKey, nextDemand.current);
+			injectFailure(4);
+
+			ObjectManager* objectManager = ObjectManager::instance();
+
+			objectManager->commitUpdatePersistentObjectToDB(sellerCredits.get());
+
+			if (lockedCity != nullptr && plan.tax > 0)
+				objectManager->commitUpdatePersistentObjectToDB(lockedCity);
+
+			objectManager->commitUpdatePersistentObjectToDB(furyEconomyState.get());
+
+			if (objectManager->commitDestroyObjectToDB(auctionItemObjectId) != 0)
+				throw Exception("FURY settlement failed to queue AuctionItem delete");
+
+			for (int i = 0; i < productObjectIds.size(); ++i) {
+				if (objectManager->commitDestroyObjectToDB(productObjectIds.get(i)) != 0)
+					throw Exception("FURY settlement failed to queue sold-object delete");
+			}
+
+			injectFailure(5);
+
+			// This is the durable boundary. All payout/state writes and all object
+			// deletes above are now committed in one Berkeley transaction.
+			ObjectDatabaseManager::instance()->commitLocalTransaction();
+		} catch (const Exception& e) {
+			ObjectDatabaseManager::instance()->abortLocalTransaction();
+
+			Logger::console.error()
+				<< "FURY ECONOMY FAIL-STOP before durable settlement commit; "
+				<< "pending DB writes aborted. listing=" << listingId
+				<< ", error=" << e.getMessage();
+
+			System::flushStreams();
+			System::abort();
+		} catch (...) {
+			ObjectDatabaseManager::instance()->abortLocalTransaction();
+
+			Logger::console.error()
+				<< "FURY ECONOMY FAIL-STOP before durable settlement commit; "
+				<< "pending DB writes aborted. listing=" << listingId
+				<< ", unknown exception";
+
+			System::flushStreams();
+			System::abort();
 		}
-		injectFailure(4);
 
-		sellingObject->destroyObjectFromDatabase(true);
-		injectFailure(5);
+		// Stage 6 proves the opposite crash case: once the explicit Berkeley
+		// commit returned, a hard crash must recover the purchase as committed.
+		if (failureStage == 6) {
+			Logger::console.error()
+				<< "FURY settlement post-commit failure injection stage 6, listing="
+				<< listingId;
+			System::flushStreams();
+			System::abort();
+		}
 
-		trx.commit();
+		item->setPersistent(0);
+		item->_setDeletedFromDatabase(true);
+		item->_setMarkedForDeletion(true);
+		item->_setUpdated(false);
+
+		for (int i = 0; i < productObjectIds.size(); ++i) {
+			ManagedReference<SceneObject*> soldObject = zoneServer->getObject(productObjectIds.get(i));
+
+			if (soldObject == nullptr)
+				continue;
+
+			soldObject->setPersistent(0);
+			soldObject->_setDeletedFromDatabase(true);
+			soldObject->_setMarkedForDeletion(true);
+			soldObject->_setUpdated(false);
+		}
 
 		info(true)
-			<< "FURY economy purchase settled: listing=" << listingId
+			<< "FURY economy purchase durably settled: listing=" << listingId
 			<< ", owner=" << expectedOwnerId
 			<< ", gross=" << plan.grossPrice
 			<< ", tax=" << plan.tax
 			<< ", sellerNet=" << plan.sellerNet
+			<< ", sellerBankBefore=" << bankBefore
+			<< ", sellerBankAfter=" << sellerCredits->getBankCredits()
+			<< ", sellerCashBefore=" << cashBefore
+			<< ", sellerCashAfter=" << sellerCredits->getCashCredits()
 			<< ", units=" << currentUnits
-			<< ", comparisonKey=" << currentComparisonKey;
-	} catch (const Exception& e) {
-		ObjectDatabaseManager::instance()->abortLocalTransaction();
+			<< ", comparisonKey=" << currentComparisonKey
+			<< ", deletedObjects=" << productObjectIds.size();
 
-		Logger::console.error()
-			<< "FURY ECONOMY FAIL-STOP after mutation began; pending DB writes aborted. "
-			<< "listing=" << listingId << ", error=" << e.getMessage();
+		Reference<CreatureObject*> onlineSeller = sellerCredits->getOwner().get();
 
-		System::flushStreams();
-		System::abort();
-	} catch (...) {
-		ObjectDatabaseManager::instance()->abortLocalTransaction();
+		if (onlineSeller != nullptr && onlineSeller->isOnline()) {
+			StringBuffer message;
+			message
+				<< "FURY market purchased one of your listings for "
+				<< plan.grossPrice << " credits"
+				<< (plan.tax > 0 ? " before city sales tax." : ".");
+			onlineSeller->sendSystemMessage(message.toString());
+		}
 
-		Logger::console.error()
-			<< "FURY ECONOMY FAIL-STOP after mutation began; pending DB writes aborted. "
-			<< "listing=" << listingId << ", unknown exception";
+		return true;
+	};
 
-		System::flushStreams();
-		System::abort();
+	bool settled = false;
+
+	if (city != nullptr && !city->isClientRegion()) {
+		Locker cityLocker(city, furyEconomyState);
+		settled = commitSettlement(city);
+	} else {
+		settled = commitSettlement(nullptr);
 	}
+
+	if (!settled)
+		return;
 }
 
 void AuctionManagerImplementation::checkVendorItems(bool startupTask) {
