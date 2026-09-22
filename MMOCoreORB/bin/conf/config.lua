@@ -260,6 +260,7 @@ Fury = {
 		ObserveVendorMarket = 0,
 		DryRun = 1,
 		ExecutePurchases = 0,
+		PersistDemand = 0,
 		TickSeconds = 600,
 		DefaultDemand = 0.50,
 		PurchaseThreshold = 0.62,

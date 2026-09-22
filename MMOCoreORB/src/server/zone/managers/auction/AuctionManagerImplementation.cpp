@@ -9,6 +9,7 @@
 #include "server/zone/managers/fury/economy/FuryMarketObserver.h"
 #include "server/zone/managers/fury/economy/FuryMarketDryRun.h"
 #include "server/zone/managers/fury/economy/FuryMarketTickTask.h"
+#include "server/zone/managers/fury/economy/FuryEconomyState.h"
 #include "server/zone/managers/auction/AuctionsMap.h"
 #include "server/zone/managers/object/ObjectManager.h"
 #include "templates/manager/TemplateManager.h"
@@ -57,6 +58,9 @@ void AuctionManagerImplementation::initialize() {
 	Core::getTaskManager()->initializeCustomQueue("AuctionSearch", ConfigManager::instance()->getMaxAuctionSearchJobs(), true);
 
 	auctionMap = new AuctionsMap();
+
+	if (ConfigManager::instance()->getBool("Fury.Economy.PersistDemand", false))
+		initializeFuryEconomyState();
 
 	ObjectDatabase* auctionDatabase = ObjectDatabaseManager::instance()->loadObjectDatabase("auctionitems", true);
 	ObjectDatabaseManager::instance()->commitLocalTransaction();
@@ -294,6 +298,50 @@ void AuctionManagerImplementation::initialize() {
 		<< "in " << elapsed << " second(s), (" << ps << "/s), "
 		<< "skipped " << skipped << " (" << countDuplicates << " duplicate listings), "
 		<< "loaded " << auctionMap->getTotalItemCount() << " object(s) into auctionsMap.";
+}
+
+void AuctionManagerImplementation::initializeFuryEconomyState() {
+	ObjectDatabase* economyDatabase =
+		ObjectDatabaseManager::instance()->loadObjectDatabase("furyeconomy", true);
+
+	if (economyDatabase == nullptr) {
+		error("FURY economy: unable to load furyeconomy database");
+		return;
+	}
+
+	ObjectDatabaseIterator iterator(economyDatabase);
+	uint64 objectID = 0;
+	Reference<FuryEconomyState*> loadedState = nullptr;
+	int stateCount = 0;
+
+	while (iterator.getNextKey(objectID)) {
+		Reference<FuryEconomyState*> candidate =
+			Core::getObjectBroker()->lookUp(objectID).castTo<FuryEconomyState*>();
+
+		if (candidate == nullptr)
+			continue;
+
+		stateCount++;
+
+		if (loadedState == nullptr)
+			loadedState = candidate;
+	}
+
+	if (loadedState == nullptr) {
+		loadedState = new FuryEconomyState();
+		ObjectManager::instance()->persistObject(loadedState, 1, "furyeconomy");
+		info(true) << "FURY economy: created persistent demand state";
+	} else {
+		Locker locker(loadedState);
+		info(true)
+			<< "FURY economy: loaded persistent demand state with "
+			<< loadedState->getDemandEntryCount() << " demand entries";
+	}
+
+	if (stateCount > 1)
+		warning() << "FURY economy: found " << stateCount << " persistent state objects; using the first";
+
+	furyEconomyState = loadedState;
 }
 
 void AuctionManagerImplementation::runFuryMarketTick() {
