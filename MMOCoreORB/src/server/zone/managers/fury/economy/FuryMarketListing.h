@@ -7,6 +7,8 @@ struct FuryMarketListing {
 	std::uint64_t listingId = 0;
 	std::uint64_t vendorId = 0;
 	std::uint64_t ownerId = 0;
+	std::uint32_t planetCrc = 0;
+	std::uint64_t regionId = 0;
 
 	int itemType = 0;
 	int effectiveItemType = 0;

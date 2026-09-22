@@ -1,6 +1,7 @@
 #include "FuryMarketObserver.h"
 #include "FuryItemQuality.h"
 #include "server/zone/ZoneServer.h"
+#include "server/zone/objects/region/CityRegion.h"
 
 FuryMarketSnapshot FuryMarketObserver::scan(TerminalListVector* items) {
 	FuryMarketSnapshot snapshot;
@@ -81,6 +82,18 @@ std::vector<FuryMarketListing> FuryMarketObserver::collectListings(TerminalListV
 			listing.auction = item->isAuction();
 			listing.factoryCrate = item->isFactoryCrate();
 			listing.onBazaar = item->isOnBazaar();
+
+			if (zoneServer != nullptr) {
+				ManagedReference<SceneObject*> vendor = zoneServer->getObject(item->getVendorID());
+
+				if (vendor != nullptr) {
+					listing.planetCrc = vendor->getPlanetCRC();
+					ManagedReference<CityRegion*> city = vendor->getCityRegion().get();
+
+					if (city != nullptr)
+						listing.regionId = city->getObjectID();
+				}
+			}
 
 			if (zoneServer != nullptr) {
 				ManagedReference<SceneObject*> sellingObject =

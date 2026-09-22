@@ -55,6 +55,18 @@ jobs:
       - name: Run demand model smoke
         run: /tmp/fury-demand-model-smoke
 
+      - name: Compile regional demand book
+        run: |
+          g++ -std=c++14 -Wall -Wextra -Werror \
+            -I MMOCoreORB/src \
+            scripts/fury/demand-book-smoke.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FuryDemandModel.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FuryDemandBook.cpp \
+            -o /tmp/fury-demand-book-smoke
+
+      - name: Run regional demand book smoke
+        run: /tmp/fury-demand-book-smoke
+
       - name: Compile settlement planner
         run: |
           g++ -std=c++14 -Wall -Wextra -Werror \
