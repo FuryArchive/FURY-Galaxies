@@ -38,7 +38,7 @@ SceneObject* unwrapFactoryCrate(SceneObject* object, ManagedReference<TangibleOb
 }
 }
 
-FuryItemQuality FuryItemQualityExtractor::inspect(SceneObject* object) {
+FuryItemQuality FuryItemQualityExtractor::inspect(server::zone::objects::scene::SceneObject* object) {
 	FuryItemQuality result;
 
 	if (object == nullptr)
