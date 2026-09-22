@@ -1,0 +1,119 @@
+#!/bin/bash
+set -eo pipefail
+
+HOME_DIR="${HOME_DIR:-/home/swgemu}"
+PROBE_ROOT="${FURY_CANARY_PROBE_ROOT:-${HOME_DIR}/fury-canary-probes}"
+
+usage() {
+    echo "Usage: fury-market-verify <stage 0..6> <baseline-name> <observed-name>"
+}
+
+die() {
+    echo "FURY VERIFY FAIL: $*" >&2
+    exit 1
+}
+
+eq_field() {
+    local field="$1"
+    local expected
+    local actual
+
+    expected="$(jq -c ".${field}" "${baseline}")"
+    actual="$(jq -c ".${field}" "${observed}")"
+
+    [ "${actual}" = "${expected}" ] ||
+        die "${field}: expected ${expected}, got ${actual}"
+}
+
+float_eq() {
+    local label="$1"
+    local expected="$2"
+    local actual="$3"
+
+    awk -v a="${expected}" -v b="${actual}" '
+        BEGIN {
+            d = a - b
+            if (d < 0) d = -d
+            exit(d <= 0.000001 ? 0 : 1)
+        }
+    ' || die "${label}: expected ${expected}, got ${actual}"
+}
+
+[ "$#" -eq 3 ] || { usage; exit 2; }
+
+stage="$1"
+baseline_name="$2"
+observed_name="$3"
+
+[[ "${stage}" =~ ^[0-6]$ ]] || die "stage must be 0..6"
+[[ "${baseline_name}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || die "invalid baseline name"
+[[ "${observed_name}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || die "invalid observed name"
+
+baseline="${PROBE_ROOT}/${baseline_name}.json"
+observed="${PROBE_ROOT}/${observed_name}.json"
+
+[ -s "${baseline}" ] || die "baseline probe missing: ${baseline}"
+[ -s "${observed}" ] || die "observed probe missing: ${observed}"
+
+jq -e '.valid == true and .listingPresent == true and .expectedEligible == true'     "${baseline}" >/dev/null ||
+    die "baseline is not an eligible live listing"
+
+jq -e '.valid == true and .baselineLoaded == true' "${observed}" >/dev/null ||
+    die "observed probe is invalid or did not load baseline"
+
+if [ "${stage}" -ge 1 ] && [ "${stage}" -le 5 ]; then
+    jq -e '.listingPresent == true and .listingForSale == true' "${observed}" >/dev/null ||
+        die "listing was not restored FORSALE after pre-commit crash"
+
+    jq -e '.auctionItemObjectPresent == true and .soldObjectPresent == true'         "${observed}" >/dev/null ||
+        die "AuctionItem or sold root object is missing after rollback"
+
+    for field in auctionItemObjectIdText soldObjectIdText vendorIdText comparisonKey                  grossPrice units sellerBank sellerCash demandKey; do
+        eq_field "${field}"
+    done
+
+    float_eq "demand"         "$(jq -r '.demand' "${baseline}")"         "$(jq -r '.demand' "${observed}")"
+
+    if jq -e '.cityPresent == true' "${baseline}" >/dev/null; then
+        jq -e '.cityPresent == true' "${observed}" >/dev/null ||
+            die "city disappeared after rollback"
+        float_eq "cityTreasury"             "$(jq -r '.cityTreasury' "${baseline}")"             "$(jq -r '.cityTreasury' "${observed}")"
+    fi
+
+    while IFS= read -r oid; do
+        present="$(jq -r --arg oid "${oid}" '.persistentObjectPresence[$oid] // false' "${observed}")"
+        [ "${present}" = "true" ] ||
+            die "persistent sold object ${oid} is missing after rollback"
+    done < <(jq -r '.persistentObjectIdsText[]' "${baseline}")
+
+    echo "FURY verify PASS: stage ${stage} rolled back completely"
+    exit 0
+fi
+
+jq -e '.listingPresent == false' "${observed}" >/dev/null ||
+    die "listing still exists after committed settlement"
+jq -e '.auctionItemObjectPresent == false' "${observed}" >/dev/null ||
+    die "AuctionItem database object still exists after committed settlement"
+jq -e '.soldObjectPresent == false' "${observed}" >/dev/null ||
+    die "sold root object still exists after committed settlement"
+
+[ "$(jq -r '.sellerBank' "${observed}")" = "$(jq -r '.expectedSellerBankAfter' "${baseline}")" ] ||
+    die "seller bank does not match expected committed balance"
+[ "$(jq -r '.sellerCash' "${observed}")" = "$(jq -r '.expectedSellerCashAfter' "${baseline}")" ] ||
+    die "seller cash does not match expected committed balance"
+
+float_eq "demand"     "$(jq -r '.expectedDemandAfter' "${baseline}")"     "$(jq -r '.demand' "${observed}")"
+
+if jq -e '.cityPresent == true' "${baseline}" >/dev/null; then
+    jq -e '.cityPresent == true' "${observed}" >/dev/null ||
+        die "city unavailable after committed settlement"
+    float_eq "cityTreasury"         "$(jq -r '.expectedCityTreasuryAfter' "${baseline}")"         "$(jq -r '.cityTreasury' "${observed}")"
+fi
+
+while IFS= read -r oid; do
+    present="$(jq -r --arg oid "${oid}" '.persistentObjectPresence[$oid] // false' "${observed}")"
+    [ "${present}" = "false" ] ||
+        die "persistent sold object ${oid} survived committed deletion"
+done < <(jq -r '.persistentObjectIdsText[]' "${baseline}")
+
+echo "FURY verify PASS: stage ${stage} recovered as one committed settlement"

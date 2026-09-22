@@ -1,0 +1,68 @@
+/*
+ * FURY Galaxies persistent economy state.
+ */
+
+package server.zone.managers.fury.economy;
+
+import engine.core.ManagedObject;
+import system.util.VectorMap;
+include system.lang.Time;
+
+@json
+class FuryEconomyState extends ManagedObject {
+	@dereferenced
+	protected VectorMap<string, float> demand;
+
+	@dereferenced
+	protected Time lastDemandTick;
+
+	public FuryEconomyState() {
+		demand.setAllowOverwriteInsertPlan();
+		demand.setNullValue(-1.0f);
+	}
+
+	@preLocked
+	@read
+	public float getDemand(final string key, float fallback) {
+		if (!demand.contains(key))
+			return fallback;
+
+		return demand.get(key);
+	}
+
+	@preLocked
+	public void setDemand(final string key, float value) {
+		if (value < 0.0f)
+			value = 0.0f;
+
+		if (value > 1.0f)
+			value = 1.0f;
+
+		demand.put(key, value);
+	}
+
+	@preLocked
+	public native int recoverDemand(float target, float recoveryPerTick);
+
+	@preLocked
+	public void removeDemand(final string key) {
+		if (demand.contains(key))
+			demand.drop(key);
+	}
+
+	@read
+	public int getDemandEntryCount() {
+		return demand.size();
+	}
+
+	@preLocked
+	public void updateLastDemandTick() {
+		lastDemandTick.updateToCurrentTime();
+	}
+
+	@preLocked
+	@read
+	public unsigned long getLastDemandTick() {
+		return lastDemandTick.getMiliTime();
+	}
+}

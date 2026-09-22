@@ -251,3 +251,43 @@ Core3 = {
 }
 
 -- NOTE: conf/config-local.lua is parsed after this file if it exists
+
+
+-- FURY Galaxies server-side extensions.
+-- Keep risky simulation features disabled until explicitly enabled in config-local.lua.
+Fury = {
+	Economy = {
+		ObserveVendorMarket = 0,
+		DryRun = 1,
+		ExecutePurchases = 0,
+		CanaryOnly = 1,
+		CanaryListingId = "0",
+		CanaryOwnerId = "0",
+		CanaryProbe = 0,
+		CanaryFixtureCreate = 0,
+		CanaryFixtureSellerId = "0",
+		CanaryFixtureVendorId = "0",
+		CanaryFixtureTemplate = "object/weapon/ranged/pistol/pistol_cdef.iff",
+		CanaryFixtureTargetPrice = 100,
+		CanaryFixtureComparablePrice = 1000,
+		CanaryFixtureDemand = 0.8,
+		CanaryFixtureOutput = "log/fury-market-fixture.json",
+		CanaryAutoShutdown = 0,
+		CanaryProbeOutput = "log/fury-market-canary-probe.json",
+		CanaryProbeBaseline = "",
+		PersistDemand = 0,
+		TickSeconds = 600,
+		DefaultDemand = 0.50,
+		PurchaseThreshold = 0.62,
+		DryRunLogLimit = 10,
+		MaxPurchasesPerTick = 5,
+		PurchaseImpact = 0.05,
+		DemandRecoveryPerTick = 0.02,
+		RequireKnownQualityForPurchases = 1,
+		MinComparablesForPurchase = 2,
+		MaxGrossPricePerPurchase = 250000,
+		MaxGrossCreditsPerTick = 500000,
+		MaxPersistentObjectsPerPurchase = 64,
+		FailureInjectionStage = 0,
+	},
+}

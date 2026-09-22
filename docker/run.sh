@@ -47,6 +47,6 @@ docker run -it \
     -p ${STATUSPORT}:${STATUSPORT}/tcp \
     -p ${PINGPORT}:${PINGPORT}/udp \
     -p ${ZONESERVERPORT}:${ZONESERVERPORT}/udp \
-    -v shared-tre:/tre:ro \
+    -v ${TRE_VOLUME:-shared-tre}:/tre:ro \
     -v swgemu-core3:/home/swgemu \
     ${IMAGE}

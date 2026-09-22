@@ -1,0 +1,76 @@
+name: FURY Docker smoke
+
+on:
+  push:
+    branches:
+      - fury-dev
+    paths:
+      - "docker/**"
+      - "scripts/fury/docker-*.sh"
+      - ".github/workflows/fury-docker-smoke.yml"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate shell syntax
+        run: |
+          bash -n docker/build.sh
+          bash -n docker/run.sh
+          bash -n docker/tre.sh
+          bash -n docker/files/run.sh
+          bash -n docker/files/firstboot/functions
+          bash -n docker/files/usr/local/bin/fury-market-canary
+          bash -n docker/files/usr/local/bin/fury-market-snapshot
+          bash -n docker/files/usr/local/bin/fury-market-probe
+          bash -n docker/files/usr/local/bin/fury-market-verify
+          bash -n docker/files/usr/local/bin/fury-market-fixture
+          bash -n docker/files/usr/local/bin/fury-market-canary-suite
+          bash -n scripts/fury/docker-market-canary-smoke.sh
+          bash -n scripts/fury/docker-market-fixture-smoke.sh
+          bash -n scripts/fury/docker-market-canary-suite-smoke.sh
+          bash -n scripts/fury/docker-market-snapshot-smoke.sh
+          bash -n scripts/fury/docker-market-verify-smoke.sh
+
+      - name: Validate FURY clone indirection
+        run: |
+          grep -F 'REPO_PUBLIC_NAME=FURY-Galaxies' docker/Dockerfile
+          grep -F "REPO_PUBLIC_BRANCH='fury-dev'" docker/Dockerfile
+          grep -F '"${REPO_PUBLIC_URL}/${REPO_PUBLIC_NAME}.git" Core3' docker/files/firstboot/functions
+      - name: Validate FURY canary config generation
+        run: |
+          chmod +x scripts/fury/docker-canary-config-smoke.sh
+          scripts/fury/docker-canary-config-smoke.sh
+
+      - name: Validate FURY market canary runner
+        run: |
+          chmod +x docker/files/usr/local/bin/fury-market-canary
+          chmod +x scripts/fury/docker-market-canary-smoke.sh
+          scripts/fury/docker-market-canary-smoke.sh
+
+      - name: Validate FURY market fixture bootstrap
+        run: |
+          chmod +x docker/files/usr/local/bin/fury-market-fixture
+          chmod +x scripts/fury/docker-market-fixture-smoke.sh
+          scripts/fury/docker-market-fixture-smoke.sh
+
+      - name: Validate FURY seven-stage canary suite
+        run: |
+          chmod +x docker/files/usr/local/bin/fury-market-canary-suite
+          chmod +x scripts/fury/docker-market-canary-suite-smoke.sh
+          scripts/fury/docker-market-canary-suite-smoke.sh
+
+      - name: Validate FURY market snapshot helper
+        run: |
+          chmod +x docker/files/usr/local/bin/fury-market-snapshot
+          chmod +x scripts/fury/docker-market-snapshot-smoke.sh
+          scripts/fury/docker-market-snapshot-smoke.sh
+
+      - name: Validate FURY market verifier
+        run: |
+          chmod +x docker/files/usr/local/bin/fury-market-verify
+          chmod +x scripts/fury/docker-market-verify-smoke.sh
+          scripts/fury/docker-market-verify-smoke.sh

@@ -17,6 +17,7 @@ include server.zone.packets.auction.AuctionQueryHeadersResponseMessage;
 include server.zone.managers.auction.TerminalListVector;
 include server.zone.managers.auction.AuctionEventsMap;
 include system.util.SynchronizedVectorMap;
+include server.zone.managers.fury.economy.FuryEconomyState;
 
 @dirty
 class AuctionManager extends ManagedService implements Logger {
@@ -64,12 +65,15 @@ class AuctionManager extends ManagedService implements Logger {
 
 	private boolean marketEnabled;
 
+	private transient FuryEconomyState furyEconomyState;
+
 	public AuctionManager(ZoneServer server) {
 		zoneServer = server;
 		Logger.setLoggingName("AuctionManager");
 		Logger.setLogging(false);
 		Logger.setGlobalLogging(true);
 		marketEnabled = false;
+		furyEconomyState = null;
 		auctionEvents.setNoDuplicateInsertPlan();
 		auctionEvents.setNullValue(null);
 	}
@@ -115,6 +119,36 @@ class AuctionManager extends ManagedService implements Logger {
 	}
 
 	public native void checkVendorItems(boolean startupTask = false);
+
+	@local
+	public native void runFuryMarketTick();
+
+	@local
+	public native void settleFuryMarketListing(
+		unsigned long listingId,
+		unsigned long expectedVendorId,
+		unsigned long expectedOwnerId,
+		int expectedPrice,
+		int expectedUnits,
+		unsigned int expectedComparisonKey,
+		int expectedReferencePrice,
+		float expectedQualitySignal,
+		float expectedQualityScore,
+		boolean expectedQualityKnown);
+
+	@local
+	private native boolean createFuryMarketFixture();
+
+	@local
+	private native void writeFuryCanaryProbe();
+
+	@local
+	private native void initializeFuryEconomyState();
+
+	@local
+	public FuryEconomyState getFuryEconomyState() {
+		return furyEconomyState;
+	}
 
 	public native void checkAuctions(boolean startupTask = false);
 

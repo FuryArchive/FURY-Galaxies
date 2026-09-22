@@ -1,0 +1,112 @@
+name: FURY market model
+
+on:
+  push:
+    branches:
+      - fury-dev
+    paths:
+      - "MMOCoreORB/src/server/zone/managers/fury/economy/**"
+      - "MMOCoreORB/src/tests/Fury*Test.cpp"
+      - "scripts/fury/*-smoke.cpp"
+      - ".github/workflows/fury-market-model.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: fury-market-model-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile deterministic market model
+        run: |
+          g++ -std=c++14 -Wall -Wextra -Werror \
+            -I MMOCoreORB/src \
+            scripts/fury/market-model-smoke.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FuryMarketModel.cpp \
+            -o /tmp/fury-market-model-smoke
+
+      - name: Run market model smoke
+        run: /tmp/fury-market-model-smoke
+
+      - name: Compile dry-run market
+        run: |
+          g++ -std=c++14 -Wall -Wextra -Werror \
+            -I MMOCoreORB/src \
+            scripts/fury/market-dry-run-smoke.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FuryMarketModel.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FuryMarketDryRun.cpp \
+            -o /tmp/fury-market-dry-run-smoke
+
+      - name: Run dry-run market smoke
+        run: /tmp/fury-market-dry-run-smoke
+
+      - name: Compile demand model
+        run: |
+          g++ -std=c++14 -Wall -Wextra -Werror \
+            -I MMOCoreORB/src \
+            scripts/fury/demand-model-smoke.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FuryDemandModel.cpp \
+            -o /tmp/fury-demand-model-smoke
+
+      - name: Run demand model smoke
+        run: /tmp/fury-demand-model-smoke
+
+      - name: Compile regional demand book
+        run: |
+          g++ -std=c++14 -Wall -Wextra -Werror \
+            -I MMOCoreORB/src \
+            scripts/fury/demand-book-smoke.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FuryDemandModel.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FuryDemandBook.cpp \
+            -o /tmp/fury-demand-book-smoke
+
+      - name: Run regional demand book smoke
+        run: /tmp/fury-demand-book-smoke
+
+      - name: Compile settlement planner
+        run: |
+          g++ -std=c++14 -Wall -Wextra -Werror \
+            -I MMOCoreORB/src \
+            scripts/fury/settlement-plan-smoke.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FurySettlementPlan.cpp \
+            -o /tmp/fury-settlement-plan-smoke
+
+      - name: Run settlement planner smoke
+        run: /tmp/fury-settlement-plan-smoke
+
+      - name: Compile settlement safety
+        run: |
+          g++ -std=c++14 -Wall -Wextra -Werror \
+            -I MMOCoreORB/src \
+            scripts/fury/settlement-safety-smoke.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FurySettlementSafety.cpp \
+            -o /tmp/fury-settlement-safety-smoke
+
+      - name: Run settlement safety smoke
+        run: /tmp/fury-settlement-safety-smoke
+
+      - name: Compile execution scope
+        run: |
+          g++ -std=c++14 -Wall -Wextra -Werror \
+            -I MMOCoreORB/src \
+            scripts/fury/execution-scope-smoke.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FuryExecutionScope.cpp \
+            -o /tmp/fury-execution-scope-smoke
+
+      - name: Run execution scope smoke
+        run: /tmp/fury-execution-scope-smoke
+
+      - name: Compile execution policy
+        run: |
+          g++ -std=c++14 -Wall -Wextra -Werror \
+            -I MMOCoreORB/src \
+            scripts/fury/execution-policy-smoke.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FuryExecutionPolicy.cpp \
+            -o /tmp/fury-execution-policy-smoke
+
+      - name: Run execution policy smoke
+        run: /tmp/fury-execution-policy-smoke

@@ -1,0 +1,58 @@
+name: FURY Core3 build
+
+on:
+  push:
+    branches:
+      - fury-dev
+    paths:
+      - "MMOCoreORB/src/**"
+      - "MMOCoreORB/CMakeLists.txt"
+      - "MMOCoreORB/bin/conf/**"
+      - ".gitmodules"
+      - ".github/workflows/fury-core3-build.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: fury-core3-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout Core3 + engine3
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 20
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y             build-essential             cmake             ninja-build             ccache             default-jre             libmariadb-dev             libmariadb-dev-compat             liblua5.3-dev             libdb5.3-dev             libssl-dev             zlib1g-dev             libboost-all-dev             libjemalloc-dev             libcpprest-dev
+
+      - name: Cache compiler output
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: core3-ccache-${{ runner.os }}-${{ hashFiles('MMOCoreORB/CMakeLists.txt', 'MMOCoreORB/utils/engine3/**/CMakeLists.txt') }}
+          restore-keys: |
+            core3-ccache-${{ runner.os }}-
+
+      - name: Configure
+        working-directory: MMOCoreORB
+        run: |
+          ccache --zero-stats
+          cmake -S . -B build/fury-ci -G Ninja             -DCMAKE_BUILD_TYPE=RelWithDebInfo             -DBUILD_IDL=ON             -DCOMPILE_TESTS=OFF             -DENABLE_NATIVE=OFF             -DENABLE_BUILD_CLIENT=OFF             -DENABLE_CCACHE=ON             -DRUN_GIT=OFF
+
+      - name: Build Core3
+        working-directory: MMOCoreORB
+        run: cmake --build build/fury-ci --target core3 -- -j4
+
+      - name: Record binary and cache stats
+        run: |
+          test -x MMOCoreORB/build/fury-ci/src/core3
+          file MMOCoreORB/build/fury-ci/src/core3
+          ccache --show-stats

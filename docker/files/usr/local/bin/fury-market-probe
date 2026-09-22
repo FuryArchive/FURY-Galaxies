@@ -1,0 +1,195 @@
+#!/bin/bash
+set -eo pipefail
+
+HOME_DIR="${HOME_DIR:-/home/swgemu}"
+REPO_DIR="${FURY_CORE3_REPO:-${HOME_DIR}/workspace/Core3}"
+BIN_DIR="${REPO_DIR}/MMOCoreORB/bin"
+CFG="${BIN_DIR}/conf/config-local.lua"
+PROBE_ROOT="${FURY_CANARY_PROBE_ROOT:-${HOME_DIR}/fury-canary-probes}"
+BUILD_STAMP="${HOME_DIR}/.fury-core3-build-sha"
+CANARY_BIN="${FURY_MARKET_CANARY_BIN:-/usr/local/bin/fury-market-canary}"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  fury-market-probe capture <listing-oid> <seller-oid> <name> [--rebuild]
+  fury-market-probe inspect <listing-oid> <seller-oid> <baseline-name> <name> [--rebuild]
+
+capture writes a baseline JSON with expected post-settlement values.
+inspect loads that baseline as fallback metadata, which allows verification even
+after stage 6 has deleted the listing and sold object graph.
+EOF
+}
+
+die() {
+    echo "FURY PROBE ERROR: $*" >&2
+    exit 2
+}
+
+valid_name() {
+    [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]]
+}
+
+ensure_tre() {
+    [ -d /tre ] || die "/tre is not mounted"
+    find /tre -type f -print -quit 2>/dev/null | grep -q . ||
+        die "/tre is mounted but contains no game data"
+}
+
+ensure_mariadb() {
+    if mysqladmin ping --silent >/dev/null 2>&1; then
+        return
+    fi
+
+    if [ "$(id -u)" -eq 0 ]; then
+        /etc/init.d/mariadb start
+    else
+        sudo /etc/init.d/mariadb start
+    fi
+
+    mysqladmin ping --silent >/dev/null 2>&1 ||
+        die "MariaDB did not start"
+}
+
+ensure_build() {
+    local force="$1"
+
+    [ -d "${REPO_DIR}/.git" ] || die "Core3 repository not found at ${REPO_DIR}"
+
+    local sha
+    sha="$(git -C "${REPO_DIR}" rev-parse HEAD)"
+    local stamped=""
+
+    [ ! -f "${BUILD_STAMP}" ] || stamped="$(cat "${BUILD_STAMP}")"
+
+    if [ "${force}" = "1" ] ||
+        [ ! -x "${BIN_DIR}/core3" ] ||
+        [ "${sha}" != "${stamped}" ]; then {
+        echo "FURY probe: building Core3 at ${sha}"
+        (
+            cd "${REPO_DIR}"
+            "${HOME_DIR}/bin/build"
+        )
+        printf '%s\n' "${sha}" > "${BUILD_STAMP}"
+    }
+    fi
+}
+
+write_probe_block() {
+    local output="$1"
+    local baseline="$2"
+
+    local tmp
+    tmp="$(mktemp)"
+
+    awk '
+        /^-- BEGIN FURY MARKET PROBE$/ { skip=1; next }
+        /^-- END FURY MARKET PROBE$/   { skip=0; next }
+        !skip { print }
+    ' "${CFG}" > "${tmp}"
+
+    cat >> "${tmp}" <<EOF
+
+-- BEGIN FURY MARKET PROBE
+Fury = Fury or {}
+Fury.Economy = Fury.Economy or {}
+Fury.Economy.ObserveVendorMarket = 0
+Fury.Economy.DryRun = 1
+Fury.Economy.ExecutePurchases = 0
+Fury.Economy.PersistDemand = 1
+Fury.Economy.CanaryProbe = 1
+Fury.Economy.CanaryAutoShutdown = 0
+Fury.Economy.CanaryProbeOutput = "${output}"
+Fury.Economy.CanaryProbeBaseline = "${baseline}"
+-- END FURY MARKET PROBE
+EOF
+
+    mv "${tmp}" "${CFG}"
+}
+
+run_probe() {
+    local listing="$1"
+    local owner="$2"
+    local output="$3"
+    local baseline="$4"
+    local rebuild="$5"
+
+    [ -x "${CANARY_BIN}" ] || die "canary helper not found: ${CANARY_BIN}"
+    "${CANARY_BIN}" 0 "${listing}" "${owner}" --config-only
+
+    mkdir -p "${PROBE_ROOT}"
+    rm -f "${output}"
+    write_probe_block "${output}" "${baseline}"
+
+    [ "$(pgrep -x core3 2>/dev/null || true)" = "" ] ||
+        die "core3 is already running"
+
+    ensure_tre
+    ensure_mariadb
+    ensure_build "${rebuild}"
+
+    echo "FURY probe: starting read-only Core3 initialization"
+    (
+        cd "${BIN_DIR}"
+        ./core3 shutdown
+    )
+
+    [ -s "${output}" ] || die "probe output was not created: ${output}"
+    jq -e '.valid == true' "${output}" >/dev/null ||
+        die "probe output is invalid"
+
+    echo "FURY probe written: ${output}"
+}
+
+mode="${1:-}"
+case "${mode}" in
+    capture)
+        [ "$#" -ge 4 ] || { usage; exit 2; }
+        listing="$2"
+        owner="$3"
+        name="$4"
+        shift 4
+        valid_name "${name}" || die "invalid probe name: ${name}"
+        rebuild=0
+        if [ "${1:-}" = "--rebuild" ]; then
+            rebuild=1
+            shift
+        fi
+        [ "$#" -eq 0 ] || die "unknown option: $1"
+
+        output="${PROBE_ROOT}/${name}.json"
+        run_probe "${listing}" "${owner}" "${output}" "" "${rebuild}"
+        jq -e '.listingPresent == true and .sellerCreditsPresent == true and .expectedEligible == true'             "${output}" >/dev/null ||
+            die "baseline probe is not an eligible live listing"
+        ;;
+    inspect)
+        [ "$#" -ge 5 ] || { usage; exit 2; }
+        listing="$2"
+        owner="$3"
+        baseline_name="$4"
+        name="$5"
+        shift 5
+        valid_name "${baseline_name}" || die "invalid baseline probe name: ${baseline_name}"
+        valid_name "${name}" || die "invalid output probe name: ${name}"
+        rebuild=0
+        if [ "${1:-}" = "--rebuild" ]; then
+            rebuild=1
+            shift
+        fi
+        [ "$#" -eq 0 ] || die "unknown option: $1"
+
+        baseline="${PROBE_ROOT}/${baseline_name}.json"
+        [ -s "${baseline}" ] || die "baseline probe not found: ${baseline_name}"
+        output="${PROBE_ROOT}/${name}.json"
+        run_probe "${listing}" "${owner}" "${output}" "${baseline}" "${rebuild}"
+        jq -e '.baselineLoaded == true' "${output}" >/dev/null ||
+            die "probe did not load baseline metadata"
+        ;;
+    -h|--help)
+        usage
+        ;;
+    *)
+        usage
+        exit 2
+        ;;
+esac
