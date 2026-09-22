@@ -813,6 +813,22 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 		}
 
 
+		TransactionLog audit(expectedOwnerId, TrxCode::BAZAARSYSTEM, plan.sellerNet, false);
+		audit.setAutoCommit(false);
+		audit.addState("furyMarket", true);
+		audit.addState("durableCommit", true);
+		audit.addState("listingId", listingId);
+		audit.addState("soldObjectId", sellingObject->getObjectID());
+		audit.addState("grossPrice", plan.grossPrice);
+		audit.addState("cityTax", plan.tax);
+		audit.addState("sellerNet", plan.sellerNet);
+		audit.addState("units", lockedUnits);
+		audit.addState("comparisonKey", lockedComparisonKey);
+		audit.addState("planetCrc", planetCrc);
+		audit.addState("regionId", regionId);
+		audit.addState("demandAfter", nextDemand.current);
+		audit.commit();
+
 		info(true)
 			<< "FURY economy purchase durably settled: listing=" << listingId
 			<< ", owner=" << expectedOwnerId
