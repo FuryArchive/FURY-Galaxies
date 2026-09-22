@@ -3,6 +3,8 @@
 
 #include "server/zone/objects/auction/AuctionItem.h"
 #include "server/zone/managers/auction/TerminalListVector.h"
+#include "FuryMarketListing.h"
+#include <vector>
 
 struct FuryMarketSnapshot {
 	int terminalCount = 0;
@@ -28,6 +30,7 @@ struct FuryMarketSnapshot {
 class FuryMarketObserver {
 public:
 	static FuryMarketSnapshot scan(TerminalListVector* items);
+	static std::vector<FuryMarketListing> collectListings(TerminalListVector* items);
 };
 
 #endif // FURYMARKETOBSERVER_H_
