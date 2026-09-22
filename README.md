@@ -1,3 +1,20 @@
+# FURY Galaxies
+
+**Single-player-first Star Wars Galaxies sandbox RPG built on SWGEmu/Core3.**
+
+FURY Galaxies keeps SWG's professions, resource economy, crafting, harvesting, housing, factories, vendors and open-world systems, then replaces dependencies on a large live player population with server-side simulation.
+
+Development lives on **`fury-dev`**. The fork's **`unstable`** branch remains the upstream tracking base.
+
+Current technical milestone: native player-vendor economy integration. See:
+- [FURY_STATUS.md](FURY_STATUS.md)
+- [Architecture](docs/FURY_ARCHITECTURE.md)
+- [Spike 001 — Native Vendor Market](docs/spikes/001-npc-market.md)
+
+> FURY is an independent modification of the open-source SWGEmu/Core3 server. Client assets are not included.
+
+---
+
 # SWGEmu Core3: Recreating the Classic Star Wars Galaxies Experience
 
 ## What is SWGEmu?
