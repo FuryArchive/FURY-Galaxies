@@ -39,3 +39,14 @@ jobs:
 
       - name: Run dry-run market smoke
         run: /tmp/fury-market-dry-run-smoke
+
+      - name: Compile demand model
+        run: |
+          g++ -std=c++14 -Wall -Wextra -Werror \
+            -I MMOCoreORB/src \
+            scripts/fury/demand-model-smoke.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FuryDemandModel.cpp \
+            -o /tmp/fury-demand-model-smoke
+
+      - name: Run demand model smoke
+        run: /tmp/fury-demand-model-smoke
