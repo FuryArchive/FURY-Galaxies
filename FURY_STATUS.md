@@ -5,32 +5,66 @@
 ### Foundation
 - Fork created from `swgemu/Core3`.
 - Development branch: `fury-dev`.
-- Upstream branch retained as `unstable`.
-- Server architecture confirmed: C++/IDL + Lua, native Docker workflow, native AuctionManager/AuctionsMap persistence.
+- Upstream tracking branch: `unstable`.
+- FURY code isolated under `MMOCoreORB/src/server/zone/managers/fury/`.
+- Local bootstrap, environment doctor and upstream-sync helpers added.
+- Lightweight market CI is active.
+- Full Core3 build gate is active and uses the real Core3 C++14/IDL build.
 
-### Milestone 0 — prove the fork is a viable single-player conversion
-In progress.
+### Economy Spike 001
 
-Current implementation target:
-**read-only observation of real player-vendor listings from native AuctionManager maintenance.**
+Implemented:
+- read-only `FuryMarketObserver` over native Core3 vendor listings;
+- portable `FuryMarketListing` snapshots from real `AuctionItem` data;
+- factory-crate prototype type handling;
+- deterministic `FuryMarketModel`;
+- explicit unknown-quality handling (no invented average quality);
+- category-relative dry-run pricing;
+- fixed-price-only dry-run buyer decisions;
+- dedicated `FuryMarketTickTask` independent of Core3's hourly auction maintenance;
+- configurable tick interval, demand and purchase threshold;
+- smoke/unit coverage for pure market logic.
 
-Why this first:
-it exercises a difficult, central MMO dependency (player economy) through real Core3 objects while carrying effectively zero risk to player state.
+Current runtime behavior:
+```
+native player vendor
+    -> AuctionsMap / AuctionItem
+    -> FuryMarketObserver
+    -> FuryMarketListing
+    -> FuryMarketDryRun
+    -> log: eligible / wouldPurchase
+```
 
-### Next gates
-1. Compile observer hook.
-2. Run server with FURY observer enabled.
-3. Create/craft/list an item on a player vendor.
-4. Confirm listing is visible in FURY market snapshot.
-5. Add deterministic dry-run purchase scoring.
-6. Refactor native sale settlement for synthetic-market purchases.
-7. Persist regional demand.
+No item, credit, vendor, owner or demand state is mutated.
 
-### Deliberately deferred
-- custom client UI;
-- companions;
+### Native settlement research
+
+Core3's `doInstantBuy` is not suitable for a synthetic NPC buyer as-is. It combines:
+- buyer bank debit;
+- auction ownership transfer;
+- buyer identity;
+- SOLD/retrieval lifecycle;
+- buyer and seller mail;
+- seller payment;
+- city sales tax.
+
+Decision: do **not** create fake NPC player creatures. The real purchase milestone will introduce a reusable server-side settlement primitive with separate player-purchase and simulated-market semantics.
+
+### Immediate gates
+1. Full Core3 build green on current `fury-dev`.
+2. Local server boot with legally obtained TRE assets.
+3. Real crafted item listed on a native player vendor.
+4. FURY tick observes that listing.
+5. Dry-run buyer scores that real listing.
+6. Add item-type-specific quality extraction, starting with weapons/armor.
+7. Implement exactly-once simulated settlement.
+8. Persist regional demand across restart.
+
+### Still deliberately deferred
+- actual NPC purchases;
 - settlement/city progression;
-- global balance changes;
-- skill-point redesign.
+- companions;
+- global profession/skill-point rebalance;
+- custom client UI.
 
-Those begin after the economy spike proves the server can be changed cleanly.
+The rule remains: no destructive simulation until the read-only path is proven end to end.
