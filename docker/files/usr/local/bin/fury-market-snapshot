@@ -143,9 +143,9 @@ restore_snapshot() {
     ensure_mariadb
     mkdir -p "${BIN_DIR}" "${SNAPSHOT_ROOT}"
 
-    local stage="${BIN_DIR}/.fury-restore-${name}-$"
-    local old="${BIN_DIR}/.fury-old-databases-$"
-    local rollback_sql="${SNAPSHOT_ROOT}/.mysql-rollback-${name}-$.sql.gz"
+    local stage="${BIN_DIR}/.fury-restore-${name}-${BASHPID}"
+    local old="${BIN_DIR}/.fury-old-databases-${BASHPID}"
+    local rollback_sql="${SNAPSHOT_ROOT}/.mysql-rollback-${name}-${BASHPID}.sql.gz"
     rm -rf "${stage}" "${old}"
     rm -f "${rollback_sql}"
 

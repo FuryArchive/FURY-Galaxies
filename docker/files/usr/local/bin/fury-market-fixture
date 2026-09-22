@@ -1,0 +1,278 @@
+#!/bin/bash
+set -eo pipefail
+
+HOME_DIR="${HOME_DIR:-/home/swgemu}"
+REPO_DIR="${FURY_CORE3_REPO:-${HOME_DIR}/workspace/Core3}"
+BIN_DIR="${REPO_DIR}/MMOCoreORB/bin"
+CFG="${BIN_DIR}/conf/config-local.lua"
+BUILD_STAMP="${HOME_DIR}/.fury-core3-build-sha"
+PROBE_BIN="${FURY_MARKET_PROBE_BIN:-/usr/local/bin/fury-market-probe}"
+SNAPSHOT_BIN="${FURY_MARKET_SNAPSHOT_BIN:-/usr/local/bin/fury-market-snapshot}"
+MAX_U64=18446744073709551615
+
+usage() {
+    cat <<'EOF'
+Usage:
+  fury-market-fixture <seller-oid> [baseline-name] [--vendor OID] [--rebuild] [--force] [--config-only]
+
+Creates the deterministic native CDEF market fixture, captures a machine
+baseline probe and saves the matching MariaDB + Berkeley snapshot.
+
+Defaults:
+  baseline-name = baseline
+  vendor OID    = 0 (Core3 fixture auto-selects the lowest loaded bazaar)
+EOF
+}
+
+die() {
+    echo "FURY FIXTURE ERROR: $*" >&2
+    exit 2
+}
+
+valid_name() {
+    [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]]
+}
+
+valid_u64() {
+    local raw="$1"
+    [[ "${raw}" =~ ^[0-9]+$ ]] || return 1
+
+    local normalized
+    normalized="$(printf '%s' "${raw}" | sed 's/^0*//')"
+    [ -n "${normalized}" ] || normalized=0
+
+    if [ "${#normalized}" -lt 20 ]; then
+        return 0
+    fi
+
+    if [ "${#normalized}" -gt 20 ]; then
+        return 1
+    fi
+
+    [[ "${normalized}" < "${MAX_U64}" || "${normalized}" == "${MAX_U64}" ]]
+}
+
+strip_runtime_blocks() {
+    local tmp
+    tmp="$(mktemp)"
+
+    [ -f "${CFG}" ] || touch "${CFG}"
+
+    awk '
+        /^-- BEGIN FURY MARKET FIXTURE$/ { skip=1; next }
+        /^-- END FURY MARKET FIXTURE$/   { skip=0; next }
+        /^-- BEGIN FURY MARKET CANARY$/  { skip=1; next }
+        /^-- END FURY MARKET CANARY$/    { skip=0; next }
+        /^-- BEGIN FURY MARKET PROBE$/   { skip=1; next }
+        /^-- END FURY MARKET PROBE$/     { skip=0; next }
+        !skip { print }
+    ' "${CFG}" > "${tmp}"
+
+    mv "${tmp}" "${CFG}"
+}
+
+write_fixture_block() {
+    local seller="$1"
+    local vendor="$2"
+    local manifest="$3"
+
+    mkdir -p "$(dirname "${CFG}")" "$(dirname "${manifest}")"
+    strip_runtime_blocks
+
+    cat >> "${CFG}" <<EOF
+
+-- BEGIN FURY MARKET FIXTURE
+Fury = Fury or {}
+Fury.Economy = Fury.Economy or {}
+Fury.Economy.ObserveVendorMarket = 0
+Fury.Economy.DryRun = 1
+Fury.Economy.ExecutePurchases = 0
+Fury.Economy.PersistDemand = 1
+Fury.Economy.CanaryOnly = 1
+Fury.Economy.CanaryProbe = 0
+Fury.Economy.CanaryAutoShutdown = 0
+Fury.Economy.CanaryFixtureCreate = 1
+Fury.Economy.CanaryFixtureSellerId = "${seller}"
+Fury.Economy.CanaryFixtureVendorId = "${vendor}"
+Fury.Economy.CanaryFixtureTemplate = "object/weapon/ranged/pistol/pistol_cdef.iff"
+Fury.Economy.CanaryFixtureTargetPrice = 100
+Fury.Economy.CanaryFixtureComparablePrice = 1000
+Fury.Economy.CanaryFixtureDemand = 0.8
+Fury.Economy.CanaryFixtureOutput = "${manifest}"
+-- END FURY MARKET FIXTURE
+EOF
+}
+
+ensure_tre() {
+    [ -d /tre ] || die "/tre is not mounted"
+    find /tre -type f -print -quit 2>/dev/null | grep -q . ||
+        die "/tre is mounted but contains no game data"
+}
+
+ensure_mariadb() {
+    if mysqladmin ping --silent >/dev/null 2>&1; then
+        return
+    fi
+
+    if [ "$(id -u)" -eq 0 ]; then
+        /etc/init.d/mariadb start
+    else
+        sudo /etc/init.d/mariadb start
+    fi
+
+    mysqladmin ping --silent >/dev/null 2>&1 ||
+        die "MariaDB did not start"
+}
+
+ensure_build() {
+    local force="$1"
+
+    [ -d "${REPO_DIR}/.git" ] || die "Core3 repository not found at ${REPO_DIR}"
+
+    local sha
+    sha="$(git -C "${REPO_DIR}" rev-parse HEAD)"
+
+    local stamped=""
+    [ ! -f "${BUILD_STAMP}" ] || stamped="$(cat "${BUILD_STAMP}")"
+
+    if [ "${force}" = "1" ] ||
+        [ ! -x "${BIN_DIR}/core3" ] ||
+        [ "${sha}" != "${stamped}" ]; then
+        echo "FURY fixture: building Core3 at ${sha}"
+        (
+            cd "${REPO_DIR}"
+            "${HOME_DIR}/bin/build"
+        )
+        printf '%s\n' "${sha}" > "${BUILD_STAMP}"
+    fi
+
+    [ -x "${BIN_DIR}/core3" ] || die "Core3 binary missing after build"
+}
+
+[ "$#" -ge 1 ] || { usage; exit 2; }
+
+seller="$1"
+shift
+baseline="baseline"
+vendor="0"
+rebuild=0
+force=0
+config_only=0
+
+if [ "$#" -gt 0 ] && [[ "$1" != --* ]]; then
+    baseline="$1"
+    shift
+fi
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --vendor)
+            [ "$#" -ge 2 ] || die "--vendor requires an OID"
+            vendor="$2"
+            shift
+            ;;
+        --rebuild)
+            rebuild=1
+            ;;
+        --force)
+            force=1
+            ;;
+        --config-only)
+            config_only=1
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            die "unknown option: $1"
+            ;;
+    esac
+    shift
+done
+
+valid_u64 "${seller}" || die "invalid seller OID: ${seller}"
+[ "${seller}" != "0" ] || die "seller OID must be non-zero"
+valid_u64 "${vendor}" || die "invalid vendor OID: ${vendor}"
+valid_name "${baseline}" || die "invalid baseline name: ${baseline}"
+
+manifest="${HOME_DIR}/fury-canary-fixtures/${baseline}.json"
+write_fixture_block "${seller}" "${vendor}" "${manifest}"
+
+if [ "${config_only}" -eq 1 ]; then
+    echo "FURY fixture config written: ${CFG}"
+    exit 0
+fi
+
+cleanup_config=1
+cleanup() {
+    if [ "${cleanup_config}" -eq 1 ]; then
+        strip_runtime_blocks || true
+    fi
+}
+trap cleanup EXIT
+
+[ "$(pgrep -x core3 2>/dev/null || true)" = "" ] ||
+    die "core3 is already running"
+
+ensure_tre
+ensure_mariadb
+ensure_build "${rebuild}"
+
+rm -f "${manifest}"
+timeout_seconds="${FURY_FIXTURE_TIMEOUT_SECONDS:-300}"
+[[ "${timeout_seconds}" =~ ^[0-9]+$ ]] ||
+    die "FURY_FIXTURE_TIMEOUT_SECONDS must be an unsigned integer"
+
+logfile="${BIN_DIR}/fury-market-fixture.log"
+
+echo "FURY fixture: starting deterministic fixture bootstrap; log=${logfile}"
+set +e
+(
+    cd "${BIN_DIR}"
+    timeout --signal=TERM "${timeout_seconds}" ./core3 shutdown
+) 2>&1 | tee "${logfile}"
+rc="${PIPESTATUS[0]}"
+set -e
+
+if [ "${rc}" -eq 124 ]; then
+    die "fixture bootstrap timed out"
+fi
+
+[ "${rc}" -eq 0 ] || die "fixture bootstrap exited with rc=${rc}"
+[ -s "${manifest}" ] || die "fixture manifest was not created: ${manifest}"
+
+jq -e '.ready == true and .wouldPurchase == true and .targetListingIdText != "" and .sellerIdText != ""'     "${manifest}" >/dev/null ||
+    die "fixture manifest is not ready"
+
+listing="$(jq -r '.targetListingIdText' "${manifest}")"
+manifest_seller="$(jq -r '.sellerIdText' "${manifest}")"
+
+[ "${manifest_seller}" = "${seller}" ] ||
+    die "fixture seller mismatch: expected ${seller}, got ${manifest_seller}"
+
+# The fixture creation switch must never leak into probe/canary restarts.
+strip_runtime_blocks
+cleanup_config=0
+trap - EXIT
+
+[ -x "${PROBE_BIN}" ] || die "probe helper not found: ${PROBE_BIN}"
+[ -x "${SNAPSHOT_BIN}" ] || die "snapshot helper not found: ${SNAPSHOT_BIN}"
+
+"${PROBE_BIN}" capture "${listing}" "${seller}" "${baseline}"
+
+snapshot_args=(save "${baseline}")
+if [ "${force}" -eq 1 ]; then
+    snapshot_args+=(--force)
+fi
+"${SNAPSHOT_BIN}" "${snapshot_args[@]}"
+
+echo
+echo "FURY FIXTURE READY"
+echo "  baseline=${baseline}"
+echo "  listing=${listing}"
+echo "  seller=${seller}"
+echo "  manifest=${manifest}"
+echo
+echo "Next:"
+echo "  fury-market-canary-suite ${listing} ${seller} ${baseline}"

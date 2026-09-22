@@ -3,11 +3,32 @@
 This is the first runtime validation path for real NPC market settlement.
 Do not disable canary mode for this pass.
 
+## Deterministic baseline bootstrap
+
+With an existing test character OID, the baseline is now one command:
+
+```bash
+fury-market-fixture <seller-oid> baseline
+```
+
+The helper creates the native three-CDEF deterministic fixture, validates that
+the 100-credit target is a real purchase candidate against two 1,000-credit
+comparables, performs a normal Core3 shutdown, removes the fixture-creation
+switch from config, captures the baseline probe and saves the matching MariaDB
++ Berkeley snapshot.
+
+The vendor defaults to the lowest loaded bazaar terminal. Use
+`--vendor <oid>` only when a specific terminal is required.
+
+The helper prints the exact target listing and seller OIDs. Those values are
+decimal strings end-to-end; shell tooling never round-trips them through JSON
+floating-point numbers.
+
 ## Preconditions
 
 Use an isolated/local Core3 database snapshot.
 
-Choose one fixed-price listing that:
+For a manual/non-fixture listing, choose one fixed-price listing that:
 
 - belongs to a known test seller;
 - is a weapon, armor item, or a factory crate containing one;
@@ -123,6 +144,21 @@ accepting the crash as expected.
 Use `--config-only` to update the canary block without starting the server,
 or `--rebuild` to force a compile.
 
+## Complete seven-stage proof
+
+After `fury-market-fixture` has created `baseline`, run:
+
+```bash
+fury-market-canary-suite <listing-oid> <seller-oid> baseline
+```
+
+The suite runs `1,2,3,4,5,6,0` in that order. Before every stage it restores
+the exact same baseline and after every stage it executes the restart probe and
+machine verifier. It stops at the first failed invariant.
+
+Use `--rebuild` to force one compile before stage 1; the remaining six stages
+reuse the same binary when the repository SHA is unchanged.
+
 ## Failure stages 1-5: must roll back by restart
 
 Run the same untouched database snapshot separately with
@@ -178,10 +214,11 @@ fury-market-canary 0 <listing-oid> <seller-oid> --restore baseline --verify base
 
 For this run only, the runner sets `CanaryAutoShutdown=1`. After the exact
 canary listing commits, post-commit audit/notification code completes and the
-settlement queues Core3's native `shutdown 0` console command. The runner
-requires a clean process exit plus the durable-settlement and auto-shutdown log
-markers before it launches the same post-restart probe/verifier used by stage
-6.
+settlement schedules a retrying shutdown task. The task waits until Core3's
+console pipe exists, queues the native `shutdown 0` command, and emits the
+queued-shutdown marker only after that succeeds. The runner requires a clean
+process exit plus the durable-settlement and queued-shutdown markers before it
+launches the same post-restart probe/verifier used by stage 6.
 
 Verify:
 

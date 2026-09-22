@@ -25,7 +25,11 @@ jobs:
           bash -n docker/files/usr/local/bin/fury-market-snapshot
           bash -n docker/files/usr/local/bin/fury-market-probe
           bash -n docker/files/usr/local/bin/fury-market-verify
+          bash -n docker/files/usr/local/bin/fury-market-fixture
+          bash -n docker/files/usr/local/bin/fury-market-canary-suite
           bash -n scripts/fury/docker-market-canary-smoke.sh
+          bash -n scripts/fury/docker-market-fixture-smoke.sh
+          bash -n scripts/fury/docker-market-canary-suite-smoke.sh
           bash -n scripts/fury/docker-market-snapshot-smoke.sh
           bash -n scripts/fury/docker-market-verify-smoke.sh
 
@@ -44,6 +48,18 @@ jobs:
           chmod +x docker/files/usr/local/bin/fury-market-canary
           chmod +x scripts/fury/docker-market-canary-smoke.sh
           scripts/fury/docker-market-canary-smoke.sh
+
+      - name: Validate FURY market fixture bootstrap
+        run: |
+          chmod +x docker/files/usr/local/bin/fury-market-fixture
+          chmod +x scripts/fury/docker-market-fixture-smoke.sh
+          scripts/fury/docker-market-fixture-smoke.sh
+
+      - name: Validate FURY seven-stage canary suite
+        run: |
+          chmod +x docker/files/usr/local/bin/fury-market-canary-suite
+          chmod +x scripts/fury/docker-market-canary-suite-smoke.sh
+          scripts/fury/docker-market-canary-suite-smoke.sh
 
       - name: Validate FURY market snapshot helper
         run: |

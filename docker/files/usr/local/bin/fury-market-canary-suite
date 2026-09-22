@@ -1,0 +1,84 @@
+#!/bin/bash
+set -eo pipefail
+
+HOME_DIR="${HOME_DIR:-/home/swgemu}"
+PROBE_ROOT="${FURY_CANARY_PROBE_ROOT:-${HOME_DIR}/fury-canary-probes}"
+CANARY_BIN="${FURY_MARKET_CANARY_BIN:-/usr/local/bin/fury-market-canary}"
+SNAPSHOT_BIN="${FURY_MARKET_SNAPSHOT_BIN:-/usr/local/bin/fury-market-snapshot}"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  fury-market-canary-suite <listing-oid> <seller-oid> <baseline-name> [--rebuild]
+
+Runs the complete settlement proof in order:
+  stages 1,2,3,4,5,6,0
+
+Every stage restores the same baseline, executes the canary, probes recovered
+state and verifies the expected rollback/commit invariants.
+EOF
+}
+
+die() {
+    echo "FURY CANARY SUITE ERROR: $*" >&2
+    exit 2
+}
+
+[ "$#" -ge 3 ] || { usage; exit 2; }
+
+listing="$1"
+owner="$2"
+baseline="$3"
+shift 3
+
+rebuild=0
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --rebuild) rebuild=1 ;;
+        -h|--help) usage; exit 0 ;;
+        *) die "unknown option: $1" ;;
+    esac
+    shift
+done
+
+[[ "${baseline}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] ||
+    die "invalid baseline name: ${baseline}"
+
+[ -x "${CANARY_BIN}" ] || die "canary helper not found: ${CANARY_BIN}"
+[ -x "${SNAPSHOT_BIN}" ] || die "snapshot helper not found: ${SNAPSHOT_BIN}"
+[ -s "${PROBE_ROOT}/${baseline}.json" ] ||
+    die "baseline probe missing: ${PROBE_ROOT}/${baseline}.json"
+
+"${SNAPSHOT_BIN}" list | grep -Fx "${baseline}" >/dev/null ||
+    die "baseline snapshot not found: ${baseline}"
+
+[ "$(pgrep -x core3 2>/dev/null || true)" = "" ] ||
+    die "core3 is already running"
+
+stages=(1 2 3 4 5 6 0)
+first=1
+
+for stage in "${stages[@]}"; do
+    echo
+    echo "============================================================"
+    echo "FURY CANARY SUITE: stage ${stage}"
+    echo "============================================================"
+
+    args=(
+        "${stage}"
+        "${listing}"
+        "${owner}"
+        --restore "${baseline}"
+        --verify "${baseline}"
+    )
+
+    if [ "${rebuild}" -eq 1 ] && [ "${first}" -eq 1 ]; then
+        args+=(--rebuild)
+    fi
+
+    "${CANARY_BIN}" "${args[@]}"
+    first=0
+done
+
+echo
+echo "FURY CANARY SUITE PASS: stages 1-6 and 0 verified from baseline ${baseline}"
