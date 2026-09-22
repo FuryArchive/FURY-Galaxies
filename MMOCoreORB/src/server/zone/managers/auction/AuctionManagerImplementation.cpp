@@ -610,22 +610,6 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 	const String demandKey = makeFuryDemandKey(planetCrc, regionId, currentComparisonKey);
 	const uint64 auctionItemObjectId = item->getObjectID();
 
-	SortedVector<uint64> productObjectIds;
-	productObjectIds.setNoDuplicateInsertPlan();
-	productObjectIds.put(sellingObject->getObjectID());
-
-	SortedVector<uint64> childObjectIds;
-	childObjectIds.setNoDuplicateInsertPlan();
-	sellingObject->getChildrenRecursive(childObjectIds, 50, false, false);
-
-	for (int i = 0; i < childObjectIds.size(); ++i) {
-		const uint64 childId = childObjectIds.get(i);
-		ManagedReference<SceneObject*> child = zoneServer->getObject(childId);
-
-		if (child != nullptr && child->isPersistent())
-			productObjectIds.put(childId);
-	}
-
 	const int failureStage =
 		ConfigManager::instance()->getInt("Fury.Economy.FailureInjectionStage", 0);
 
@@ -634,10 +618,67 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 			throw Exception("FURY settlement failure injection stage " + String::valueOf(stage));
 	};
 
-	Locker creditLocker(sellerCredits, item);
+	Locker sellingLocker(sellingObject, item);
+	Locker creditLocker(sellerCredits, sellingObject);
 	Locker demandLocker(furyEconomyState, sellerCredits);
 
 	auto commitSettlement = [&] (CityRegion* lockedCity) {
+		// Cross-lock acquisition may temporarily release the previous lock. Repeat
+		// every mutable listing/product invariant now that the full lock chain is held.
+		if (item->getStatus() != AuctionItem::FORSALE ||
+			item->isAuction() ||
+			item->getVendorID() != expectedVendorId ||
+			item->getOwnerID() != expectedOwnerId ||
+			item->getPrice() != expectedPrice ||
+			item->getAuctionedItemObjectID() != sellingObject->getObjectID()) {
+			return false;
+		}
+
+		int lockedUnits = 1;
+
+		if (item->isFactoryCrate() && sellingObject->isFactoryCrate()) {
+			ManagedReference<FactoryCrate*> lockedCrate = cast<FactoryCrate*>(sellingObject.get());
+
+			if (lockedCrate != nullptr && lockedCrate->getUseCount() > 0)
+				lockedUnits = lockedCrate->getUseCount();
+		}
+
+		if (lockedUnits != (expectedUnits > 0 ? expectedUnits : 1))
+			return false;
+
+		const int lockedEffectiveType =
+			item->isFactoryCrate() && item->getCratedItemType() > 0
+				? item->getCratedItemType()
+				: item->getItemType();
+
+		auto lockedQuality = FuryItemQualityExtractor::inspect(sellingObject.get());
+		const uint32 lockedComparisonKey =
+			lockedQuality.templateCrc != 0
+				? lockedQuality.templateCrc
+				: static_cast<uint32>(lockedEffectiveType);
+
+		if ((expectedComparisonKey != 0 && lockedComparisonKey != expectedComparisonKey) ||
+			(ConfigManager::instance()->getBool("Fury.Economy.RequireKnownQualityForPurchases", true) &&
+			 !lockedQuality.known)) {
+			return false;
+		}
+
+		SortedVector<uint64> productObjectIds;
+		productObjectIds.setNoDuplicateInsertPlan();
+		productObjectIds.put(sellingObject->getObjectID());
+
+		SortedVector<uint64> childObjectIds;
+		childObjectIds.setNoDuplicateInsertPlan();
+		sellingObject->getChildrenRecursive(childObjectIds, 50, false, false);
+
+		for (int i = 0; i < childObjectIds.size(); ++i) {
+			const uint64 childId = childObjectIds.get(i);
+			ManagedReference<SceneObject*> child = zoneServer->getObject(childId);
+
+			if (child != nullptr && child->isPersistent())
+				productObjectIds.put(childId);
+		}
+
 		FurySettlementInput settlementInput;
 		settlementInput.grossPrice = item->getPrice();
 		settlementInput.citySalesTaxPercent = lockedCity != nullptr ? lockedCity->getSalesTax() : 0.0f;
@@ -679,7 +720,7 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 		demandState.purchaseImpact =
 			ConfigManager::instance()->getFloat("Fury.Economy.PurchaseImpact", 0.05f);
 
-		const auto nextDemand = FuryDemandModel::applyPurchase(demandState, currentUnits);
+		const auto nextDemand = FuryDemandModel::applyPurchase(demandState, lockedUnits);
 		const int bankBefore = sellerCredits->getBankCredits();
 		const int cashBefore = sellerCredits->getCashCredits();
 
@@ -780,8 +821,8 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 			<< ", sellerBankAfter=" << sellerCredits->getBankCredits()
 			<< ", sellerCashBefore=" << cashBefore
 			<< ", sellerCashAfter=" << sellerCredits->getCashCredits()
-			<< ", units=" << currentUnits
-			<< ", comparisonKey=" << currentComparisonKey
+			<< ", units=" << lockedUnits
+			<< ", comparisonKey=" << lockedComparisonKey
 			<< ", deletedObjects=" << productObjectIds.size();
 
 		Reference<CreatureObject*> onlineSeller = sellerCredits->getOwner().get();
