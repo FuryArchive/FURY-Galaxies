@@ -63,22 +63,29 @@ If validation fails, the task exits without payment or item deletion.
 
 Because one purchase is one Engine3 task transaction:
 
-- crash before commit -> none of the persistent settlement mutations become durable;
-- successful task commit -> listing/payment/tax/demand changes become durable together.
+- process crash before Berkeley commit -> none of the queued persistent mutations become durable;
+- successful Berkeley commit -> the queued listing/payment/tax/demand changes become durable together.
 
-This is the exactly-once foundation FURY should rely on.
+However, non-STM `Task::run` catches ordinary C++ exceptions and still calls `commitLocalTransaction()`. Therefore an exception is **not** a rollback mechanism.
+
+FURY must use a two-phase implementation shape:
+
+1. **prevalidation phase** — perform every operation that can legitimately fail before changing credits/listing/item/demand;
+2. **mutation phase** — only deterministic, non-failable managed-object mutations and auction-map removal remain.
+
+Unexpected exceptions in the mutation phase are treated as a server correctness bug, not normal control flow.
 
 ## Remaining runtime proof
 
-Before `ExecutePurchases` can ever default on, test intentional failure injection at these points:
+Before `ExecutePurchases` can ever default on:
 
-1. after validation;
-2. after seller credit mutation;
-3. after auction removal;
-4. after item destruction request;
-5. after demand mutation.
+1. test process termination before the settlement task reaches database commit;
+2. test process termination during Berkeley commit;
+3. verify restart recovery after the committed sale;
+4. separately test validation failures and ensure they happen before mutation;
+5. instrument unexpected mutation-phase errors as fatal correctness failures.
 
-After restart, every case must resolve to either the entire sale committed or the entire sale absent — never double payment and never item loss without payment.
+The crash/restart cases must resolve to either the entire persistent sale committed or the entire persistent sale absent — never double payment and never item loss without payment.
 
 
 ## Core3 auction deletion trap
