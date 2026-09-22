@@ -1,0 +1,25 @@
+name: FURY market model
+
+on:
+  push:
+    branches:
+      - fury-dev
+  pull_request:
+    paths:
+      - "MMOCoreORB/src/server/zone/managers/fury/economy/FuryMarketModel.*"
+      - "MMOCoreORB/src/tests/FuryMarketModelTest.cpp"
+      - "scripts/fury/market-model-smoke.cpp"
+      - ".github/workflows/fury-market-model.yml"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile deterministic market model
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror             -I MMOCoreORB/src             scripts/fury/market-model-smoke.cpp             MMOCoreORB/src/server/zone/managers/fury/economy/FuryMarketModel.cpp             -o /tmp/fury-market-model-smoke
+
+      - name: Run smoke
+        run: /tmp/fury-market-model-smoke
