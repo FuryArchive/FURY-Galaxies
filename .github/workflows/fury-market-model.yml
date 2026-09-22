@@ -88,3 +88,14 @@ jobs:
 
       - name: Run settlement safety smoke
         run: /tmp/fury-settlement-safety-smoke
+
+      - name: Compile execution scope
+        run: |
+          g++ -std=c++14 -Wall -Wextra -Werror \
+            -I MMOCoreORB/src \
+            scripts/fury/execution-scope-smoke.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FuryExecutionScope.cpp \
+            -o /tmp/fury-execution-scope-smoke
+
+      - name: Run execution scope smoke
+        run: /tmp/fury-execution-scope-smoke

@@ -12,6 +12,7 @@
 #include "server/zone/managers/fury/economy/FuryMarketSettlementTask.h"
 #include "server/zone/managers/fury/economy/FurySettlementPlan.h"
 #include "server/zone/managers/fury/economy/FurySettlementSafety.h"
+#include "server/zone/managers/fury/economy/FuryExecutionScope.h"
 #include "server/zone/managers/fury/economy/FuryDemandModel.h"
 #include "server/zone/managers/fury/economy/FuryItemQuality.h"
 #include "server/zone/managers/fury/economy/FuryEconomyState.h"
@@ -52,6 +53,21 @@ String makeFuryDemandKey(uint32 planetCrc, uint64 regionId, uint32 comparisonKey
 	StringBuffer key;
 	key << planetCrc << ":" << regionId << ":" << comparisonKey;
 	return key.toString();
+}
+
+FuryExecutionScope getFuryExecutionScope() {
+	FuryExecutionScope scope;
+	scope.canaryOnly =
+		ConfigManager::instance()->getBool("Fury.Economy.CanaryOnly", true);
+
+	const String listingId =
+		ConfigManager::instance()->getString("Fury.Economy.CanaryListingId", "0");
+	const String ownerId =
+		ConfigManager::instance()->getString("Fury.Economy.CanaryOwnerId", "0");
+
+	scope.listingId = listingId.isEmpty() ? 0 : UnsignedLong::valueOf(listingId);
+	scope.ownerId = ownerId.isEmpty() ? 0 : UnsignedLong::valueOf(ownerId);
+	return scope;
 }
 }
 
@@ -484,10 +500,24 @@ void AuctionManagerImplementation::runFuryMarketTick() {
 
 				const bool requireKnownQuality =
 					ConfigManager::instance()->getBool("Fury.Economy.RequireKnownQualityForPurchases", true);
+				const FuryExecutionScope executionScope = getFuryExecutionScope();
+
+				if (executionScope.canaryOnly &&
+					executionScope.listingId == 0 &&
+					executionScope.ownerId == 0) {
+					warning("FURY economy: execution suppressed; CanaryOnly=1 requires CanaryListingId or CanaryOwnerId");
+				}
 
 				for (const auto& entry : evaluation.decisions) {
 					if (!entry.decision.purchase || scheduled >= maxPurchases)
 						continue;
+
+					if (!FuryExecutionScopeGuard::allows(
+						executionScope,
+						entry.listing.listingId,
+						entry.listing.ownerId)) {
+						continue;
+					}
 
 					if (requireKnownQuality && !entry.listing.qualitySignalKnown)
 						continue;
@@ -544,6 +574,11 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 		furyEconomyState == nullptr) {
 		return;
 	}
+
+	const FuryExecutionScope executionScope = getFuryExecutionScope();
+
+	if (!FuryExecutionScopeGuard::allows(executionScope, listingId, expectedOwnerId))
+		return;
 
 	Reference<AuctionItem*> item = auctionMap->getItem(listingId);
 
