@@ -37,6 +37,7 @@ Fury.Economy.CanaryOnly = 1
 Fury.Economy.CanaryListingId = "<auctioned-item-oid>"
 Fury.Economy.CanaryOwnerId = "<seller-creature-oid>"
 Fury.Economy.MaxPurchasesPerTick = 1
+Fury.Economy.DemandRecoveryPerTick = 0.0 -- isolate purchase-impact durability
 ```
 
 Leave all normal gross-price and category safety gates enabled.
@@ -80,7 +81,7 @@ After restart all of these must be true:
 - all persistent children are absent;
 - seller received exactly the planned net payout;
 - city treasury received exactly the planned tax, when applicable;
-- regional demand contains exactly one purchase impact;
+- regional demand contains exactly one purchase impact from the recorded pre-test value;
 - the sale is not applied a second time on subsequent ticks.
 
 A post-commit audit log is not required for stage 6: the deliberate crash occurs
@@ -99,6 +100,10 @@ Verify:
 - one post-commit audit entry has `furyMarket=true` and
   `durableCommit=true`;
 - no second purchase occurs for the same listing.
+
+Keep `DemandRecoveryPerTick=0` for all seven crash-recovery runs so the
+expected demand delta is unambiguous. Restore the intended recovery rate only
+after the settlement boundary itself is proven.
 
 Only after all seven runs (1-6 plus normal success) pass should
 `CanaryOnly=0` even be considered.
