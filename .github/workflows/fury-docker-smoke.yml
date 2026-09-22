@@ -1,0 +1,29 @@
+name: FURY Docker smoke
+
+on:
+  push:
+    branches:
+      - fury-dev
+    paths:
+      - "docker/**"
+      - ".github/workflows/fury-docker-smoke.yml"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate shell syntax
+        run: |
+          bash -n docker/build.sh
+          bash -n docker/run.sh
+          bash -n docker/files/run.sh
+          bash -n docker/files/firstboot/functions
+
+      - name: Validate FURY clone indirection
+        run: |
+          grep -F 'REPO_PUBLIC_NAME=FURY-Galaxies' docker/Dockerfile
+          grep -F 'REPO_PUBLIC_BRANCH='\''fury-dev'\''' docker/Dockerfile
+          grep -F '"${REPO_PUBLIC_URL}/${REPO_PUBLIC_NAME}.git" Core3' docker/files/firstboot/functions
