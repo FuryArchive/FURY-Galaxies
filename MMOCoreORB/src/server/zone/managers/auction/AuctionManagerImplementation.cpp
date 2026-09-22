@@ -698,6 +698,11 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 	auto commitSettlement = [&] (CityRegion* lockedCity) {
 		// Cross-lock acquisition may temporarily release the previous lock. Repeat
 		// every mutable listing/product invariant now that the full lock chain is held.
+		Reference<AuctionItem*> mappedItem = auctionMap->getItem(listingId);
+
+		if (mappedItem == nullptr || mappedItem.get() != item.get())
+			return false;
+
 		if (item->getStatus() != AuctionItem::FORSALE ||
 			item->isAuction() ||
 			item->getVendorID() != expectedVendorId ||
