@@ -66,6 +66,7 @@ Current economy controls:
 - `Fury.Economy.MaxPurchasesPerTick`
 - `Fury.Economy.MaxGrossPricePerPurchase`
 - `Fury.Economy.MaxGrossCreditsPerTick`
+- `Fury.Economy.MaxPersistentObjectsPerPurchase`
 - `Fury.Economy.FailureInjectionStage`
 
 Default execution posture is fail-closed:

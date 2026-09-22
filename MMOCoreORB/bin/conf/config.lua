@@ -275,6 +275,7 @@ Fury = {
 		MinComparablesForPurchase = 2,
 		MaxGrossPricePerPurchase = 250000,
 		MaxGrossCreditsPerTick = 500000,
+		MaxPersistentObjectsPerPurchase = 64,
 		FailureInjectionStage = 0,
 	},
 }

@@ -784,6 +784,20 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 				productObjectIds.put(childId);
 		}
 
+		int maxPersistentObjects =
+			ConfigManager::instance()->getInt("Fury.Economy.MaxPersistentObjectsPerPurchase", 64);
+
+		if (maxPersistentObjects < 1)
+			return false;
+
+		if (productObjectIds.size() > maxPersistentObjects) {
+			warning()
+				<< "FURY economy: rejecting listing " << listingId
+				<< " because persistent object graph has " << productObjectIds.size()
+				<< " objects; cap=" << maxPersistentObjects;
+			return false;
+		}
+
 		FurySettlementInput settlementInput;
 		settlementInput.grossPrice = item->getPrice();
 		settlementInput.citySalesTaxPercent = lockedCity != nullptr ? lockedCity->getSalesTax() : 0.0f;
