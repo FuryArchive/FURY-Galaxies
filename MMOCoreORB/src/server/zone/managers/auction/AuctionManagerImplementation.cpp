@@ -736,7 +736,16 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 		try {
 			auctionMap->removeItem(vendor, item);
 			auctionMap->removeFromCommodityLimit(item);
-			item->setStatus(AuctionItem::DELETED);
+
+			// Use Core3's normal in-memory deletion lifecycle first. These calls
+			// mark the AuctionItem and the complete sold-object graph as
+			// non-persistent / pending deletion, but do not themselves commit DB
+			// deletes. The explicit low-level deletes below remain the atomic
+			// persistence layer for this settlement.
+			if (!item->destroyAuctionItemFromDatabase(false, false))
+				throw Exception("FURY settlement failed to mark AuctionItem deleted");
+
+			sellingObject->destroyObjectFromDatabase(true);
 			injectFailure(1);
 
 			sellerCredits->addBankCredits(plan.sellerNet, false);
@@ -803,22 +812,6 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 			System::abort();
 		}
 
-		item->setPersistent(0);
-		item->_setDeletedFromDatabase(true);
-		item->_setMarkedForDeletion(true);
-		item->_setUpdated(false);
-
-		for (int i = 0; i < productObjectIds.size(); ++i) {
-			ManagedReference<SceneObject*> soldObject = zoneServer->getObject(productObjectIds.get(i));
-
-			if (soldObject == nullptr)
-				continue;
-
-			soldObject->setPersistent(0);
-			soldObject->_setDeletedFromDatabase(true);
-			soldObject->_setMarkedForDeletion(true);
-			soldObject->_setUpdated(false);
-		}
 
 		info(true)
 			<< "FURY economy purchase durably settled: listing=" << listingId
