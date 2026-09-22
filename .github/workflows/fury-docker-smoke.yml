@@ -6,6 +6,7 @@ on:
       - fury-dev
     paths:
       - "docker/**"
+      - "scripts/fury/docker-*.sh"
       - ".github/workflows/fury-docker-smoke.yml"
   workflow_dispatch:
 
