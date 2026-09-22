@@ -10,5 +10,6 @@ Fury.Economy = {
 	ObserveVendorMarket = 1,
 	DryRun = 1,
 	TickSeconds = 600,
+	DefaultDemand = 0.50,
 	PurchaseThreshold = 0.62,
 }
