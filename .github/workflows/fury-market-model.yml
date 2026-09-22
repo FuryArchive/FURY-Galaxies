@@ -99,3 +99,14 @@ jobs:
 
       - name: Run execution scope smoke
         run: /tmp/fury-execution-scope-smoke
+
+      - name: Compile execution policy
+        run: |
+          g++ -std=c++14 -Wall -Wextra -Werror \
+            -I MMOCoreORB/src \
+            scripts/fury/execution-policy-smoke.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FuryExecutionPolicy.cpp \
+            -o /tmp/fury-execution-policy-smoke
+
+      - name: Run execution policy smoke
+        run: /tmp/fury-execution-policy-smoke

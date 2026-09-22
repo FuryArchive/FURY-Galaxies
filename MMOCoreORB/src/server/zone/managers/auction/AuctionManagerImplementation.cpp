@@ -13,6 +13,7 @@
 #include "server/zone/managers/fury/economy/FurySettlementPlan.h"
 #include "server/zone/managers/fury/economy/FurySettlementSafety.h"
 #include "server/zone/managers/fury/economy/FuryExecutionScope.h"
+#include "server/zone/managers/fury/economy/FuryExecutionPolicy.h"
 #include "server/zone/managers/fury/economy/FuryDemandModel.h"
 #include "server/zone/managers/fury/economy/FuryItemQuality.h"
 #include "server/zone/managers/fury/economy/FuryEconomyState.h"
@@ -491,10 +492,17 @@ void AuctionManagerImplementation::runFuryMarketTick() {
 				!ConfigManager::instance()->getBool("Fury.Economy.PersistDemand", false)) {
 				warning("FURY economy: purchases require PersistDemand=1 and a loaded FuryEconomyState");
 			} else {
-				int maxPurchases = ConfigManager::instance()->getInt("Fury.Economy.MaxPurchasesPerTick", 5);
+				const int configuredMaxPurchases =
+					ConfigManager::instance()->getInt("Fury.Economy.MaxPurchasesPerTick", 5);
+				const int maxPurchases =
+					FuryExecutionPolicy::effectiveMaxPurchasesPerTick(configuredMaxPurchases);
 
-				if (maxPurchases < 0)
-					maxPurchases = 0;
+				if (configuredMaxPurchases > maxPurchases) {
+					warning()
+						<< "FURY economy: MaxPurchasesPerTick=" << configuredMaxPurchases
+						<< " is temporarily execution-capped to " << maxPurchases
+						<< " until live comparable references are recomputed at settlement";
+				}
 
 				int scheduled = 0;
 				long long scheduledGross = 0;
