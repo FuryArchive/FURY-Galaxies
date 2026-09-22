@@ -4,12 +4,16 @@ on:
   push:
     branches:
       - fury-dev
-  pull_request:
     paths:
-      - "MMOCoreORB/src/server/zone/managers/fury/economy/FuryMarketModel.*"
-      - "MMOCoreORB/src/tests/FuryMarketModelTest.cpp"
-      - "scripts/fury/market-model-smoke.cpp"
+      - "MMOCoreORB/src/server/zone/managers/fury/economy/**"
+      - "MMOCoreORB/src/tests/FuryMarket*Test.cpp"
+      - "scripts/fury/market-*-smoke.cpp"
       - ".github/workflows/fury-market-model.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: fury-market-model-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   smoke:
@@ -21,5 +25,17 @@ jobs:
         run: |
           g++ -std=c++17 -Wall -Wextra -Werror             -I MMOCoreORB/src             scripts/fury/market-model-smoke.cpp             MMOCoreORB/src/server/zone/managers/fury/economy/FuryMarketModel.cpp             -o /tmp/fury-market-model-smoke
 
-      - name: Run smoke
+      - name: Run market model smoke
         run: /tmp/fury-market-model-smoke
+
+      - name: Compile dry-run market
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror \
+            -I MMOCoreORB/src \
+            scripts/fury/market-dry-run-smoke.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FuryMarketModel.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FuryMarketDryRun.cpp \
+            -o /tmp/fury-market-dry-run-smoke
+
+      - name: Run dry-run market smoke
+        run: /tmp/fury-market-dry-run-smoke
