@@ -49,6 +49,9 @@
 #include "server/zone/objects/factorycrate/FactoryCrate.h"
 #include "server/zone/objects/transaction/TransactionLog.h"
 
+#include <fstream>
+#include <iomanip>
+
 
 namespace {
 String makeFuryDemandKey(uint32 planetCrc, uint64 regionId, uint32 comparisonKey) {
@@ -320,6 +323,9 @@ void AuctionManagerImplementation::initialize() {
 
 	locker.release();
 
+	if (ConfigManager::instance()->getBool("Fury.Economy.CanaryProbe", false))
+		writeFuryCanaryProbe();
+
 	Core::getTaskManager()->executeTask([=] () {
 		checkAuctions(true);
 		checkVendorItems(true);
@@ -339,6 +345,361 @@ void AuctionManagerImplementation::initialize() {
 		<< "in " << elapsed << " second(s), (" << ps << "/s), "
 		<< "skipped " << skipped << " (" << countDuplicates << " duplicate listings), "
 		<< "loaded " << auctionMap->getTotalItemCount() << " object(s) into auctionsMap.";
+}
+
+
+void AuctionManagerImplementation::writeFuryCanaryProbe() {
+	const FuryExecutionScope scope = getFuryExecutionScope();
+	const String outputPath =
+		ConfigManager::instance()->getString(
+			"Fury.Economy.CanaryProbeOutput",
+			"log/fury-market-canary-probe.json");
+	const String baselinePath =
+		ConfigManager::instance()->getString(
+			"Fury.Economy.CanaryProbeBaseline",
+			"");
+
+	JSONSerializationType probe = JSONSerializationType::object();
+	JSONSerializationType baseline = JSONSerializationType::object();
+	bool baselineLoaded = false;
+
+	if (!baselinePath.isEmpty()) {
+		try {
+			std::ifstream input(baselinePath.toCharArray());
+
+			if (input.good()) {
+				input >> baseline;
+				baselineLoaded = true;
+			}
+		} catch (...) {
+			baselineLoaded = false;
+		}
+	}
+
+	probe["version"] = 1;
+	probe["scopeValid"] = scope.valid;
+	probe["listingId"] = scope.listingId;
+	probe["ownerId"] = scope.ownerId;
+	probe["baselineLoaded"] = baselineLoaded;
+
+	if (!scope.valid || scope.listingId == 0 || scope.ownerId == 0) {
+		probe["valid"] = false;
+		probe["error"] = "invalid-or-incomplete-canary-scope";
+	} else {
+		probe["valid"] = true;
+	}
+
+	auto baselineU64 = [&] (const char* key) -> uint64 {
+		if (!baselineLoaded || !baseline.contains(key))
+			return 0;
+
+		try {
+			return baseline[key].get<uint64>();
+		} catch (...) {
+			return 0;
+		}
+	};
+
+	auto baselineInt = [&] (const char* key) -> int {
+		if (!baselineLoaded || !baseline.contains(key))
+			return 0;
+
+		try {
+			return baseline[key].get<int>();
+		} catch (...) {
+			return 0;
+		}
+	};
+
+	auto baselineFloat = [&] (const char* key, float fallback) -> float {
+		if (!baselineLoaded || !baseline.contains(key))
+			return fallback;
+
+		try {
+			return baseline[key].get<float>();
+		} catch (...) {
+			return fallback;
+		}
+	};
+
+	Reference<AuctionItem*> item =
+		scope.listingId != 0 ? auctionMap->getItem(scope.listingId) : nullptr;
+
+	probe["listingPresent"] = item != nullptr;
+
+	uint64 auctionItemObjectId = baselineU64("auctionItemObjectId");
+	uint64 soldObjectId = baselineU64("soldObjectId");
+	uint64 vendorId = baselineU64("vendorId");
+	uint64 regionId = baselineU64("regionId");
+	uint32 planetCrc = static_cast<uint32>(baselineU64("planetCrc"));
+	uint32 comparisonKey = static_cast<uint32>(baselineU64("comparisonKey"));
+	int grossPrice = baselineInt("grossPrice");
+	int units = baselineInt("units");
+	float citySalesTaxPercent =
+		baselineFloat("citySalesTaxPercent", 0.0f);
+
+	SortedVector<uint64> persistentObjectIds;
+	persistentObjectIds.setNoDuplicateInsertPlan();
+
+	if (baselineLoaded &&
+		baseline.contains("persistentObjectIds") &&
+		baseline["persistentObjectIds"].is_array()) {
+		try {
+			for (const auto& value : baseline["persistentObjectIds"])
+				persistentObjectIds.put(value.get<uint64>());
+		} catch (...) {
+			persistentObjectIds.removeAll();
+		}
+	}
+
+	ManagedReference<SceneObject*> vendor = nullptr;
+	ManagedReference<SceneObject*> soldObject = nullptr;
+	ManagedReference<CityRegion*> city = nullptr;
+
+	if (item != nullptr) {
+		Locker itemLocker(item);
+
+		auctionItemObjectId = item->getObjectID();
+		soldObjectId = item->getAuctionedItemObjectID();
+		vendorId = item->getVendorID();
+		grossPrice = item->getPrice();
+
+		probe["listingStatus"] = item->getStatus();
+		probe["listingForSale"] = item->getStatus() == AuctionItem::FORSALE;
+		probe["listingAuction"] = item->isAuction();
+		probe["listingOwnerId"] = item->getOwnerID();
+		probe["listingVendorId"] = vendorId;
+		probe["grossPrice"] = grossPrice;
+
+		vendor = zoneServer->getObject(vendorId);
+		soldObject = zoneServer->getObject(soldObjectId);
+
+		units = 1;
+
+		if (item->isFactoryCrate() &&
+			soldObject != nullptr &&
+			soldObject->isFactoryCrate()) {
+			ManagedReference<FactoryCrate*> crate =
+				cast<FactoryCrate*>(soldObject.get());
+
+			if (crate != nullptr && crate->getUseCount() > 0)
+				units = crate->getUseCount();
+		}
+
+		const int effectiveItemType =
+			item->isFactoryCrate() && item->getCratedItemType() > 0
+				? item->getCratedItemType()
+				: item->getItemType();
+
+		auto quality = FuryItemQualityExtractor::inspect(soldObject.get());
+		comparisonKey =
+			quality.templateCrc != 0
+				? quality.templateCrc
+				: static_cast<uint32>(effectiveItemType);
+
+		probe["qualityKnown"] = quality.known;
+		probe["qualitySignal"] = quality.rawSignal;
+
+		if (vendor != nullptr) {
+			planetCrc = vendor->getPlanetCRC();
+			city = vendor->getCityRegion().get();
+
+			if (city != nullptr) {
+				regionId = city->getObjectID();
+				citySalesTaxPercent = city->getSalesTax();
+			}
+		}
+
+		persistentObjectIds.removeAll();
+
+		if (soldObject != nullptr && soldObject->isPersistent()) {
+			persistentObjectIds.put(soldObjectId);
+
+			SortedVector<uint64> children;
+			children.setNoDuplicateInsertPlan();
+			soldObject->getChildrenRecursive(children, 50, false, false);
+
+			for (int i = 0; i < children.size(); ++i) {
+				ManagedReference<SceneObject*> child =
+					zoneServer->getObject(children.get(i));
+
+				if (child != nullptr && child->isPersistent())
+					persistentObjectIds.put(children.get(i));
+			}
+		}
+	}
+
+	if (vendor == nullptr && vendorId != 0)
+		vendor = zoneServer->getObject(vendorId);
+
+	if (soldObject == nullptr && soldObjectId != 0)
+		soldObject = zoneServer->getObject(soldObjectId);
+
+	if (city == nullptr && regionId != 0) {
+		city =
+			Core::getObjectBroker()->lookUp(regionId).castTo<CityRegion*>();
+	}
+
+	probe["auctionItemObjectId"] = auctionItemObjectId;
+	probe["soldObjectId"] = soldObjectId;
+	probe["vendorId"] = vendorId;
+	probe["planetCrc"] = planetCrc;
+	probe["regionId"] = regionId;
+	probe["comparisonKey"] = comparisonKey;
+	probe["grossPrice"] = grossPrice;
+	probe["units"] = units > 0 ? units : 1;
+	probe["citySalesTaxPercent"] = citySalesTaxPercent;
+	probe["soldObjectPresent"] = soldObject != nullptr;
+	probe["soldObjectPersistent"] =
+		soldObject != nullptr && soldObject->isPersistent();
+
+	Reference<AuctionItem*> auctionRecord = nullptr;
+
+	if (auctionItemObjectId != 0) {
+		auctionRecord =
+			Core::getObjectBroker()->lookUp(auctionItemObjectId).castTo<AuctionItem*>();
+	}
+
+	probe["auctionItemObjectPresent"] = auctionRecord != nullptr;
+
+	Reference<CreditObject*> sellerCredits =
+		scope.ownerId != 0 ? CreditManager::getCreditObject(scope.ownerId) : nullptr;
+
+	probe["sellerCreditsPresent"] = sellerCredits != nullptr;
+
+	int bankCredits = 0;
+	int cashCredits = 0;
+
+	if (sellerCredits != nullptr) {
+		Locker sellerLocker(sellerCredits);
+		bankCredits = sellerCredits->getBankCredits();
+		cashCredits = sellerCredits->getCashCredits();
+		probe["sellerCreditOwnerId"] = sellerCredits->getOwnerID();
+	}
+
+	probe["sellerBank"] = bankCredits;
+	probe["sellerCash"] = cashCredits;
+
+	probe["cityPresent"] = city != nullptr;
+	const double cityTreasury =
+		city != nullptr ? city->getCityTreasury() : 0.0;
+	probe["cityTreasury"] = cityTreasury;
+
+	const float defaultDemand =
+		ConfigManager::instance()->getFloat("Fury.Economy.DefaultDemand", 0.5f);
+	float demand = defaultDemand;
+	bool demandKnown = false;
+	String demandKey;
+
+	if (comparisonKey != 0) {
+		demandKey = makeFuryDemandKey(planetCrc, regionId, comparisonKey);
+
+		if (furyEconomyState != nullptr) {
+			Locker demandLocker(furyEconomyState);
+			demand = furyEconomyState->getDemand(demandKey, defaultDemand);
+			demandKnown = true;
+		}
+	}
+
+	probe["demandKey"] = demandKey.toCharArray();
+	probe["demandKnown"] = demandKnown;
+	probe["demand"] = demand;
+
+	JSONSerializationType objectIds = JSONSerializationType::array();
+	JSONSerializationType objectPresence = JSONSerializationType::object();
+
+	for (int i = 0; i < persistentObjectIds.size(); ++i) {
+		const uint64 objectId = persistentObjectIds.get(i);
+		objectIds.push_back(objectId);
+
+		ManagedReference<SceneObject*> object = zoneServer->getObject(objectId);
+		objectPresence[String::valueOf(objectId).toCharArray()] =
+			object != nullptr;
+	}
+
+	probe["persistentObjectIds"] = objectIds;
+	probe["persistentObjectPresence"] = objectPresence;
+
+	if (!baselineLoaded) {
+		FurySettlementInput settlementInput;
+		settlementInput.grossPrice = grossPrice;
+		settlementInput.citySalesTaxPercent = citySalesTaxPercent;
+		settlementInput.forSale = item != nullptr &&
+			item->getStatus() == AuctionItem::FORSALE;
+		settlementInput.auction = item != nullptr && item->isAuction();
+		settlementInput.sellerExists = sellerCredits != nullptr;
+		settlementInput.itemExists = soldObject != nullptr;
+
+		const auto plan = FurySettlementPlanner::plan(settlementInput);
+
+		probe["expectedEligible"] = plan.eligible;
+		probe["expectedTax"] = plan.tax;
+		probe["expectedSellerNet"] = plan.sellerNet;
+
+		long long bankAfter =
+			static_cast<long long>(bankCredits) + plan.sellerNet;
+		long long cashAfter = cashCredits;
+
+		if (bankAfter > CreditObject::CREDITCAP) {
+			cashAfter += bankAfter - CreditObject::CREDITCAP;
+			bankAfter = CreditObject::CREDITCAP;
+		}
+
+		probe["expectedSellerBankAfter"] = bankAfter;
+		probe["expectedSellerCashAfter"] = cashAfter;
+		probe["expectedCityTreasuryAfter"] =
+			cityTreasury + plan.tax;
+
+		FuryDemandState demandState;
+		demandState.current = demand;
+		demandState.target = defaultDemand;
+		demandState.purchaseImpact =
+			ConfigManager::instance()->getFloat(
+				"Fury.Economy.PurchaseImpact",
+				0.05f);
+
+		const auto nextDemand =
+			FuryDemandModel::applyPurchase(
+				demandState,
+				units > 0 ? units : 1);
+		probe["expectedDemandAfter"] = nextDemand.current;
+	} else {
+		for (const char* key : {
+			"expectedEligible",
+			"expectedTax",
+			"expectedSellerNet",
+			"expectedSellerBankAfter",
+			"expectedSellerCashAfter",
+			"expectedCityTreasuryAfter",
+			"expectedDemandAfter"}) {
+			if (baseline.contains(key))
+				probe[key] = baseline[key];
+		}
+	}
+
+	try {
+		std::ofstream output(outputPath.toCharArray());
+
+		if (!output.good()) {
+			error()
+				<< "FURY canary probe: unable to open output path "
+				<< outputPath;
+			return;
+		}
+
+		output << std::setw(2) << probe << std::endl;
+		output.close();
+
+		info(true)
+			<< "FURY canary probe written: " << outputPath
+			<< ", listingPresent=" << (item != nullptr)
+			<< ", soldObjectPresent=" << (soldObject != nullptr)
+			<< ", sellerBank=" << bankCredits
+			<< ", sellerCash=" << cashCredits
+			<< ", demand=" << demand;
+	} catch (...) {
+		error() << "FURY canary probe: failed writing " << outputPath;
+	}
 }
 
 void AuctionManagerImplementation::initializeFuryEconomyState() {
