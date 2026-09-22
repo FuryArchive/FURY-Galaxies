@@ -659,6 +659,24 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 			throw Exception("FURY settlement failure injection stage " + String::valueOf(stage));
 	};
 
+	struct SettlementReceipt {
+		bool committed = false;
+		int grossPrice = 0;
+		int tax = 0;
+		int sellerNet = 0;
+		int units = 0;
+		uint32 comparisonKey = 0;
+		float demandAfter = 0.0f;
+		int deletedObjects = 0;
+		int bankBefore = 0;
+		int bankAfter = 0;
+		int cashBefore = 0;
+		int cashAfter = 0;
+		uint64 soldObjectId = 0;
+	};
+
+	SettlementReceipt receipt;
+
 	Locker sellingLocker(sellingObject, item);
 	Locker creditLocker(sellerCredits, sellingObject);
 	Locker demandLocker(furyEconomyState, sellerCredits);
@@ -848,60 +866,19 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 		}
 
 
-		TransactionLog audit(expectedOwnerId, TrxCode::BAZAARSYSTEM, plan.sellerNet, false);
-		audit.setAutoCommit(false);
-		audit.addState("furyMarket", true);
-		audit.addState("durableCommit", true);
-		audit.addState("listingId", listingId);
-		audit.addState("soldObjectId", sellingObject->getObjectID());
-		audit.addState("grossPrice", plan.grossPrice);
-		audit.addState("cityTax", plan.tax);
-		audit.addState("sellerNet", plan.sellerNet);
-		audit.addState("units", lockedUnits);
-		audit.addState("comparisonKey", lockedComparisonKey);
-		audit.addState("planetCrc", planetCrc);
-		audit.addState("regionId", regionId);
-		audit.addState("demandAfter", nextDemand.current);
-		audit.commit();
-
-		info(true)
-			<< "FURY economy purchase durably settled: listing=" << listingId
-			<< ", owner=" << expectedOwnerId
-			<< ", gross=" << plan.grossPrice
-			<< ", tax=" << plan.tax
-			<< ", sellerNet=" << plan.sellerNet
-			<< ", sellerBankBefore=" << bankBefore
-			<< ", sellerBankAfter=" << sellerCredits->getBankCredits()
-			<< ", sellerCashBefore=" << cashBefore
-			<< ", sellerCashAfter=" << sellerCredits->getCashCredits()
-			<< ", units=" << lockedUnits
-			<< ", comparisonKey=" << lockedComparisonKey
-			<< ", deletedObjects=" << productObjectIds.size();
-
-		Reference<CreatureObject*> onlineSeller = sellerCredits->getOwner().get();
-
-		if (onlineSeller != nullptr && onlineSeller->isOnline()) {
-			DeltaMessage* bankDelta =
-				new DeltaMessage(onlineSeller->getObjectID(), 'CREO', 1);
-			bankDelta->startUpdate(0x00);
-			bankDelta->insertInt(sellerCredits->getBankCredits());
-			bankDelta->close();
-			onlineSeller->sendMessage(bankDelta);
-
-			DeltaMessage* cashDelta =
-				new DeltaMessage(onlineSeller->getObjectID(), 'CREO', 1);
-			cashDelta->startUpdate(0x01);
-			cashDelta->insertInt(sellerCredits->getCashCredits());
-			cashDelta->close();
-			onlineSeller->sendMessage(cashDelta);
-
-			StringBuffer message;
-			message
-				<< "FURY market purchased one of your listings for "
-				<< plan.grossPrice << " credits"
-				<< (plan.tax > 0 ? " before city sales tax." : ".");
-			onlineSeller->sendSystemMessage(message.toString());
-		}
+		receipt.committed = true;
+		receipt.grossPrice = plan.grossPrice;
+		receipt.tax = plan.tax;
+		receipt.sellerNet = plan.sellerNet;
+		receipt.units = lockedUnits;
+		receipt.comparisonKey = lockedComparisonKey;
+		receipt.demandAfter = nextDemand.current;
+		receipt.deletedObjects = productObjectIds.size();
+		receipt.bankBefore = bankBefore;
+		receipt.bankAfter = sellerCredits->getBankCredits();
+		receipt.cashBefore = cashBefore;
+		receipt.cashAfter = sellerCredits->getCashCredits();
+		receipt.soldObjectId = sellingObject->getObjectID();
 
 		return true;
 	};
@@ -915,8 +892,74 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 		settled = commitSettlement(nullptr);
 	}
 
-	if (!settled)
+	if (!settled || !receipt.committed)
 		return;
+
+	// No filesystem logging, player lookup, packet construction or network I/O
+	// while the settlement lock chain is held.
+	demandLocker.release();
+	creditLocker.release();
+	sellingLocker.release();
+	itemLocker.release();
+
+	TransactionLog audit(expectedOwnerId, TrxCode::BAZAARSYSTEM, receipt.sellerNet, false);
+	audit.setAutoCommit(false);
+	audit.addState("furyMarket", true);
+	audit.addState("durableCommit", true);
+	audit.addState("listingId", listingId);
+	audit.addState("soldObjectId", receipt.soldObjectId);
+	audit.addState("grossPrice", receipt.grossPrice);
+	audit.addState("cityTax", receipt.tax);
+	audit.addState("sellerNet", receipt.sellerNet);
+	audit.addState("units", receipt.units);
+	audit.addState("comparisonKey", receipt.comparisonKey);
+	audit.addState("planetCrc", planetCrc);
+	audit.addState("regionId", regionId);
+	audit.addState("demandAfter", receipt.demandAfter);
+	audit.addState("sellerBankBefore", receipt.bankBefore);
+	audit.addState("sellerBankAfter", receipt.bankAfter);
+	audit.addState("sellerCashBefore", receipt.cashBefore);
+	audit.addState("sellerCashAfter", receipt.cashAfter);
+	audit.commit();
+
+	info(true)
+		<< "FURY economy purchase durably settled: listing=" << listingId
+		<< ", owner=" << expectedOwnerId
+		<< ", gross=" << receipt.grossPrice
+		<< ", tax=" << receipt.tax
+		<< ", sellerNet=" << receipt.sellerNet
+		<< ", sellerBankBefore=" << receipt.bankBefore
+		<< ", sellerBankAfter=" << receipt.bankAfter
+		<< ", sellerCashBefore=" << receipt.cashBefore
+		<< ", sellerCashAfter=" << receipt.cashAfter
+		<< ", units=" << receipt.units
+		<< ", comparisonKey=" << receipt.comparisonKey
+		<< ", deletedObjects=" << receipt.deletedObjects;
+
+	Reference<CreatureObject*> onlineSeller = sellerCredits->getOwner().get();
+
+	if (onlineSeller != nullptr && onlineSeller->isOnline()) {
+		DeltaMessage* bankDelta =
+			new DeltaMessage(onlineSeller->getObjectID(), 'CREO', 1);
+		bankDelta->startUpdate(0x00);
+		bankDelta->insertInt(receipt.bankAfter);
+		bankDelta->close();
+		onlineSeller->sendMessage(bankDelta);
+
+		DeltaMessage* cashDelta =
+			new DeltaMessage(onlineSeller->getObjectID(), 'CREO', 1);
+		cashDelta->startUpdate(0x01);
+		cashDelta->insertInt(receipt.cashAfter);
+		cashDelta->close();
+		onlineSeller->sendMessage(cashDelta);
+
+		StringBuffer message;
+		message
+			<< "FURY market purchased one of your listings for "
+			<< receipt.grossPrice << " credits"
+			<< (receipt.tax > 0 ? " before city sales tax." : ".");
+		onlineSeller->sendSystemMessage(message.toString());
+	}
 }
 
 void AuctionManagerImplementation::checkVendorItems(bool startupTask) {
