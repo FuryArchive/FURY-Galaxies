@@ -118,6 +118,126 @@ EOF
     fi
 }
 
+core3_fury_validate_flag() {
+    local name="$1"
+    local value="$2"
+
+    case "${value}" in
+        0|1) ;;
+        *) error "Invalid ${name}=[${value}], expected 0 or 1" 13 ;;
+    esac
+}
+
+core3_fury_validate_uint() {
+    local name="$1"
+    local value="$2"
+
+    if ! [[ "${value}" =~ ^[0-9]+$ ]]; then
+        error "Invalid ${name}=[${value}], expected unsigned decimal integer" 13
+    fi
+}
+
+core3_fury_validate_number() {
+    local name="$1"
+    local value="$2"
+
+    if ! [[ "${value}" =~ ^-?[0-9]+([.][0-9]+)?$ ]]; then
+        error "Invalid ${name}=[${value}], expected decimal number" 13
+    fi
+}
+
+core3_emit_fury_economy_config() {
+    local any=0
+    local flag_vars=(
+        FURY_ECONOMY_OBSERVE_VENDOR_MARKET
+        FURY_ECONOMY_DRY_RUN
+        FURY_ECONOMY_EXECUTE_PURCHASES
+        FURY_ECONOMY_PERSIST_DEMAND
+        FURY_ECONOMY_CANARY_ONLY
+    )
+
+    for var in "${flag_vars[@]}"; do
+        if [ -n "${!var:-}" ]; then
+            any=1
+            core3_fury_validate_flag "${var}" "${!var}"
+        fi
+    done
+
+    local uint_vars=(
+        FURY_ECONOMY_CANARY_LISTING_ID
+        FURY_ECONOMY_CANARY_OWNER_ID
+        FURY_ECONOMY_FAILURE_INJECTION_STAGE
+        FURY_ECONOMY_MAX_PURCHASES_PER_TICK
+        FURY_ECONOMY_TICK_SECONDS
+    )
+
+    for var in "${uint_vars[@]}"; do
+        if [ -n "${!var:-}" ]; then
+            any=1
+            core3_fury_validate_uint "${var}" "${!var}"
+        fi
+    done
+
+    if [ -n "${FURY_ECONOMY_DEMAND_RECOVERY_PER_TICK:-}" ]; then
+        any=1
+        core3_fury_validate_number \
+            FURY_ECONOMY_DEMAND_RECOVERY_PER_TICK \
+            "${FURY_ECONOMY_DEMAND_RECOVERY_PER_TICK}"
+    fi
+
+    if [ "${any}" -eq 0 ]; then
+        return
+    fi
+
+    echo
+    echo 'Fury = Fury or {}'
+    echo 'Fury.Economy = Fury.Economy or {}'
+
+    if [ -n "${FURY_ECONOMY_OBSERVE_VENDOR_MARKET:-}" ]; then
+        echo "Fury.Economy.ObserveVendorMarket = ${FURY_ECONOMY_OBSERVE_VENDOR_MARKET}"
+    fi
+
+    if [ -n "${FURY_ECONOMY_DRY_RUN:-}" ]; then
+        echo "Fury.Economy.DryRun = ${FURY_ECONOMY_DRY_RUN}"
+    fi
+
+    if [ -n "${FURY_ECONOMY_EXECUTE_PURCHASES:-}" ]; then
+        echo "Fury.Economy.ExecutePurchases = ${FURY_ECONOMY_EXECUTE_PURCHASES}"
+    fi
+
+    if [ -n "${FURY_ECONOMY_PERSIST_DEMAND:-}" ]; then
+        echo "Fury.Economy.PersistDemand = ${FURY_ECONOMY_PERSIST_DEMAND}"
+    fi
+
+    if [ -n "${FURY_ECONOMY_CANARY_ONLY:-}" ]; then
+        echo "Fury.Economy.CanaryOnly = ${FURY_ECONOMY_CANARY_ONLY}"
+    fi
+
+    if [ -n "${FURY_ECONOMY_CANARY_LISTING_ID:-}" ]; then
+        echo "Fury.Economy.CanaryListingId = \"${FURY_ECONOMY_CANARY_LISTING_ID}\""
+    fi
+
+    if [ -n "${FURY_ECONOMY_CANARY_OWNER_ID:-}" ]; then
+        echo "Fury.Economy.CanaryOwnerId = \"${FURY_ECONOMY_CANARY_OWNER_ID}\""
+    fi
+
+    if [ -n "${FURY_ECONOMY_FAILURE_INJECTION_STAGE:-}" ]; then
+        echo "Fury.Economy.FailureInjectionStage = ${FURY_ECONOMY_FAILURE_INJECTION_STAGE}"
+    fi
+
+    if [ -n "${FURY_ECONOMY_DEMAND_RECOVERY_PER_TICK:-}" ]; then
+        echo "Fury.Economy.DemandRecoveryPerTick = ${FURY_ECONOMY_DEMAND_RECOVERY_PER_TICK}"
+    fi
+
+    if [ -n "${FURY_ECONOMY_MAX_PURCHASES_PER_TICK:-}" ]; then
+        echo "Fury.Economy.MaxPurchasesPerTick = ${FURY_ECONOMY_MAX_PURCHASES_PER_TICK}"
+    fi
+
+    if [ -n "${FURY_ECONOMY_TICK_SECONDS:-}" ]; then
+        echo "Fury.Economy.TickSeconds = ${FURY_ECONOMY_TICK_SECONDS}"
+    fi
+}
+
 core3_init_config() {
     local cfg="${HOME_DIR}/workspace/Core3/MMOCoreORB/bin/conf/config-local.lua"
 
@@ -159,6 +279,8 @@ core3_init_config() {
         else
             echo 'ZonesEnabled = { "corellia", "dantooine", "dathomir", "dungeon1", "endor", "lok", "naboo", "rori", "talus", "tatooine", "tutorial", "yavin4" }'
         fi
+
+        core3_emit_fury_economy_config
     ) | tee "${cfg}" | sed 's/^/## /'
 
 }
