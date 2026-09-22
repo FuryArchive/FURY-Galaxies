@@ -9,6 +9,7 @@
 #include "server/zone/managers/fury/economy/FuryMarketObserver.h"
 #include "server/zone/managers/fury/economy/FuryMarketDryRun.h"
 #include "server/zone/managers/fury/economy/FuryMarketTickTask.h"
+#include "server/zone/managers/fury/economy/FurySettlementPlan.h"
 #include "server/zone/managers/fury/economy/FuryEconomyState.h"
 #include "server/zone/managers/auction/AuctionsMap.h"
 #include "server/zone/managers/object/ObjectManager.h"
@@ -342,6 +343,68 @@ void AuctionManagerImplementation::initializeFuryEconomyState() {
 		warning() << "FURY economy: found " << stateCount << " persistent state objects; using the first";
 
 	furyEconomyState = loadedState;
+}
+
+bool AuctionManagerImplementation::validateFuryMarketSettlement(uint64 listingId) {
+	Reference<AuctionItem*> item = auctionMap->getItem(listingId);
+
+	if (item == nullptr)
+		return false;
+
+	Locker itemLocker(item);
+
+	if (item->getStatus() != AuctionItem::FORSALE || item->isAuction())
+		return false;
+
+	ManagedReference<SceneObject*> vendor = zoneServer->getObject(item->getVendorID());
+
+	if (vendor == nullptr || vendor->getZone() == nullptr)
+		return false;
+
+	ManagedReference<SceneObject*> sellingObject =
+		zoneServer->getObject(item->getAuctionedItemObjectID());
+
+	if (sellingObject == nullptr ||
+		sellingObject->isNoTrade() ||
+		sellingObject->containsNoTradeObjectRecursive())
+		return false;
+
+	ManagedReference<PlayerManager*> playerManager = zoneServer->getPlayerManager();
+
+	if (playerManager == nullptr)
+		return false;
+
+	ManagedReference<CreatureObject*> seller =
+		playerManager->getPlayer(item->getOwnerName());
+
+	if (seller == nullptr)
+		return false;
+
+	ManagedReference<CityRegion*> city = vendor->getCityRegion().get();
+
+	FurySettlementInput settlementInput;
+	settlementInput.grossPrice = item->getPrice();
+	settlementInput.citySalesTaxPercent =
+		city != nullptr ? static_cast<float>(city->getSalesTax()) : 0.0f;
+	settlementInput.forSale = true;
+	settlementInput.auction = false;
+	settlementInput.sellerExists = true;
+	settlementInput.itemExists = true;
+
+	auto plan = FurySettlementPlanner::plan(settlementInput);
+
+	if (!plan.eligible)
+		return false;
+
+	info(true)
+		<< "FURY settlement validation: listing=" << listingId
+		<< ", seller=" << item->getOwnerName()
+		<< ", gross=" << plan.grossPrice
+		<< ", tax=" << plan.tax
+		<< ", sellerNet=" << plan.sellerNet
+		<< ", result=eligible";
+
+	return true;
 }
 
 void AuctionManagerImplementation::runFuryMarketTick() {

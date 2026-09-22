@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - fury-dev
+      - "spike/**"
     paths:
       - "MMOCoreORB/src/server/zone/managers/fury/economy/**"
       - "MMOCoreORB/src/tests/Fury*Test.cpp"
@@ -66,6 +67,17 @@ jobs:
 
       - name: Run regional demand book smoke
         run: /tmp/fury-demand-book-smoke
+
+      - name: Compile demand key codec
+        run: |
+          g++ -std=c++14 -Wall -Wextra -Werror \
+            -I MMOCoreORB/src \
+            scripts/fury/demand-key-codec-smoke.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FuryDemandKeyCodec.cpp \
+            -o /tmp/fury-demand-key-codec-smoke
+
+      - name: Run demand key codec smoke
+        run: /tmp/fury-demand-key-codec-smoke
 
       - name: Compile settlement planner
         run: |
