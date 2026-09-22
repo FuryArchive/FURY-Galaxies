@@ -387,14 +387,19 @@ void AuctionManagerImplementation::runFuryMarketTick() {
 
 		if (furyEconomyState != nullptr) {
 			Locker demandLocker(furyEconomyState);
-			const float recoveryPerTick =
-				ConfigManager::instance()->getFloat("Fury.Economy.DemandRecoveryPerTick", 0.02f);
-			const int recoveredEntries =
-				furyEconomyState->recoverDemand(defaultDemand, recoveryPerTick);
 
-			if (recoveredEntries > 0) {
-				ObjectManager::instance()->updatePersistentObject(furyEconomyState.get());
-				info(true) << "FURY economy: recovered " << recoveredEntries << " demand entrie(s)";
+			// Dry-run must stay strictly read-only. Persistent recovery is itself
+			// simulation state mutation, so only advance it in execution mode.
+			if (!dryRunEnabled && executePurchases) {
+				const float recoveryPerTick =
+					ConfigManager::instance()->getFloat("Fury.Economy.DemandRecoveryPerTick", 0.02f);
+				const int recoveredEntries =
+					furyEconomyState->recoverDemand(defaultDemand, recoveryPerTick);
+
+				if (recoveredEntries > 0) {
+					ObjectManager::instance()->updatePersistentObject(furyEconomyState.get());
+					info(true) << "FURY economy: recovered " << recoveredEntries << " demand entrie(s)";
+				}
 			}
 
 			for (auto& listing : listings) {
