@@ -548,7 +548,11 @@ void AuctionManagerImplementation::runFuryMarketTick() {
 						entry.listing.ownerId,
 						entry.listing.askingPrice,
 						entry.listing.units,
-						entry.listing.comparisonKey);
+						entry.listing.comparisonKey,
+						entry.referencePrice,
+						entry.listing.qualitySignal,
+						entry.decision.qualityScore,
+						entry.listing.qualitySignalKnown);
 
 					task->schedule(1);
 					scheduled++;
@@ -576,7 +580,11 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 	uint64 expectedOwnerId,
 	int expectedPrice,
 	int expectedUnits,
-	uint32 expectedComparisonKey) {
+	uint32 expectedComparisonKey,
+	int expectedReferencePrice,
+	float expectedQualitySignal,
+	float expectedQualityScore,
+	bool expectedQualityKnown) {
 
 	if (!ConfigManager::instance()->getBool("Fury.Economy.ExecutePurchases", false) ||
 		ConfigManager::instance()->getBool("Fury.Economy.DryRun", true) ||
@@ -676,7 +684,9 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 		int sellerNet = 0;
 		int units = 0;
 		uint32 comparisonKey = 0;
+		float demandBefore = 0.0f;
 		float demandAfter = 0.0f;
+		float liveDecisionScore = 0.0f;
 		int deletedObjects = 0;
 		int bankBefore = 0;
 		int bankAfter = 0;
@@ -741,6 +751,19 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 			return false;
 		}
 
+		if (lockedQuality.known != expectedQualityKnown)
+			return false;
+
+		if (expectedQualityKnown) {
+			float qualityDelta = lockedQuality.rawSignal - expectedQualitySignal;
+
+			if (qualityDelta < 0.0f)
+				qualityDelta = -qualityDelta;
+
+			if (qualityDelta > 0.0001f)
+				return false;
+		}
+
 		SortedVector<uint64> productObjectIds;
 		productObjectIds.setNoDuplicateInsertPlan();
 		productObjectIds.put(sellingObject->getObjectID());
@@ -800,6 +823,32 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 			ConfigManager::instance()->getFloat("Fury.Economy.DefaultDemand", 0.5f);
 		demandState.purchaseImpact =
 			ConfigManager::instance()->getFloat("Fury.Economy.PurchaseImpact", 0.05f);
+
+		const int liveComparisonPrice =
+			static_cast<int>(
+				(static_cast<long long>(item->getPrice()) + lockedUnits - 1) /
+				lockedUnits);
+
+		FuryMarketDecisionInput liveDecisionInput;
+		liveDecisionInput.demand = demandState.current;
+		liveDecisionInput.quality = expectedQualityScore;
+		liveDecisionInput.qualityKnown = expectedQualityKnown;
+		liveDecisionInput.askingPrice = liveComparisonPrice;
+		liveDecisionInput.referencePrice = expectedReferencePrice;
+		liveDecisionInput.listingId = listingId;
+
+		const auto liveDecision = FuryMarketModel::evaluate(
+			liveDecisionInput,
+			ConfigManager::instance()->getFloat("Fury.Economy.PurchaseThreshold", 0.62f));
+
+		if (!liveDecision.purchase) {
+			info(true)
+				<< "FURY economy: settlement cancelled after live demand recheck, listing="
+				<< listingId
+				<< ", demand=" << demandState.current
+				<< ", score=" << liveDecision.score;
+			return false;
+		}
 
 		const auto nextDemand = FuryDemandModel::applyPurchase(demandState, lockedUnits);
 		const int bankBefore = sellerCredits->getBankCredits();
@@ -891,7 +940,9 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 		receipt.sellerNet = plan.sellerNet;
 		receipt.units = lockedUnits;
 		receipt.comparisonKey = lockedComparisonKey;
+		receipt.demandBefore = demandState.current;
 		receipt.demandAfter = nextDemand.current;
+		receipt.liveDecisionScore = liveDecision.score;
 		receipt.deletedObjects = productObjectIds.size();
 		receipt.bankBefore = bankBefore;
 		receipt.bankAfter = sellerCredits->getBankCredits();
@@ -934,7 +985,9 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 	audit.addState("comparisonKey", receipt.comparisonKey);
 	audit.addState("planetCrc", planetCrc);
 	audit.addState("regionId", regionId);
+	audit.addState("demandBefore", receipt.demandBefore);
 	audit.addState("demandAfter", receipt.demandAfter);
+	audit.addState("liveDecisionScore", receipt.liveDecisionScore);
 	audit.addState("sellerBankBefore", receipt.bankBefore);
 	audit.addState("sellerBankAfter", receipt.bankAfter);
 	audit.addState("sellerCashBefore", receipt.cashBefore);
@@ -953,6 +1006,9 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 		<< ", sellerCashAfter=" << receipt.cashAfter
 		<< ", units=" << receipt.units
 		<< ", comparisonKey=" << receipt.comparisonKey
+		<< ", demandBefore=" << receipt.demandBefore
+		<< ", demandAfter=" << receipt.demandAfter
+		<< ", liveDecisionScore=" << receipt.liveDecisionScore
 		<< ", deletedObjects=" << receipt.deletedObjects;
 
 	Reference<CreatureObject*> onlineSeller = sellerCredits->getOwner().get();

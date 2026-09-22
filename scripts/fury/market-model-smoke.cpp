@@ -31,6 +31,21 @@ int main() {
 	assert(std::fabs(repeat.deterministicRoll - strongResult.deterministicRoll) < 0.000001f);
 	assert(repeat.purchase == strongResult.purchase);
 
+	FuryMarketDecisionInput liveDemand;
+	liveDemand.demand = 0.80f;
+	liveDemand.qualityKnown = true;
+	liveDemand.quality = 0.60f;
+	liveDemand.askingPrice = 100;
+	liveDemand.referencePrice = 100;
+	liveDemand.listingId = 424242;
+
+	auto beforeDemandDrop = FuryMarketModel::evaluate(liveDemand, 0.62f);
+	liveDemand.demand = 0.20f;
+	auto afterDemandDrop = FuryMarketModel::evaluate(liveDemand, 0.62f);
+
+	assert(beforeDemandDrop.purchase);
+	assert(!afterDemandDrop.purchase);
+
 	std::cout << "FURY market model smoke OK\n";
 	std::cout << "strong score=" << strongResult.score << " roll=" << strongResult.deterministicRoll << "\n";
 	std::cout << "bad score=" << badResult.score << " roll=" << badResult.deterministicRoll << "\n";

@@ -130,7 +130,11 @@ class AuctionManager extends ManagedService implements Logger {
 		unsigned long expectedOwnerId,
 		int expectedPrice,
 		int expectedUnits,
-		unsigned int expectedComparisonKey);
+		unsigned int expectedComparisonKey,
+		int expectedReferencePrice,
+		float expectedQualitySignal,
+		float expectedQualityScore,
+		boolean expectedQualityKnown);
 
 	@local
 	private native void initializeFuryEconomyState();

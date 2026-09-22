@@ -11,6 +11,10 @@ class FuryMarketSettlementTask : public Task {
 	int expectedPrice = 0;
 	int expectedUnits = 1;
 	uint32 expectedComparisonKey = 0;
+	int expectedReferencePrice = 0;
+	float expectedQualitySignal = 0.0f;
+	float expectedQualityScore = 0.0f;
+	bool expectedQualityKnown = false;
 
 public:
 	FuryMarketSettlementTask(
@@ -20,7 +24,11 @@ public:
 		uint64 ownerId,
 		int price,
 		int units,
-		uint32 comparisonKey) {
+		uint32 comparisonKey,
+		int referencePrice,
+		float qualitySignal,
+		float qualityScore,
+		bool qualityKnown) {
 
 		auctionManager = manager;
 		listingId = objectId;
@@ -29,6 +37,10 @@ public:
 		expectedPrice = price;
 		expectedUnits = units;
 		expectedComparisonKey = comparisonKey;
+		expectedReferencePrice = referencePrice;
+		expectedQualitySignal = qualitySignal;
+		expectedQualityScore = qualityScore;
+		expectedQualityKnown = qualityKnown;
 		setCustomTaskQueue("slowQueue");
 	}
 
@@ -44,7 +56,11 @@ public:
 			expectedOwnerId,
 			expectedPrice,
 			expectedUnits,
-			expectedComparisonKey);
+			expectedComparisonKey,
+			expectedReferencePrice,
+			expectedQualitySignal,
+			expectedQualityScore,
+			expectedQualityKnown);
 	}
 };
 
