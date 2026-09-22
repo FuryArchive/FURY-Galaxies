@@ -4,13 +4,17 @@ on:
   push:
     branches:
       - fury-dev
-  pull_request:
     paths:
       - "MMOCoreORB/src/**"
       - "MMOCoreORB/CMakeLists.txt"
       - "MMOCoreORB/bin/conf/**"
       - ".gitmodules"
       - ".github/workflows/fury-core3-build.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: fury-core3-build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
