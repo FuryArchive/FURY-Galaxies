@@ -141,14 +141,35 @@ restore_snapshot() {
     tar -tzf "${source}/berkeley.tar.gz" >/dev/null
 
     ensure_mariadb
-    mkdir -p "${BIN_DIR}"
+    mkdir -p "${BIN_DIR}" "${SNAPSHOT_ROOT}"
 
-    local stage="${BIN_DIR}/.fury-restore-${name}-$$"
-    local old="${BIN_DIR}/.fury-old-databases-$$"
+    local stage="${BIN_DIR}/.fury-restore-${name}-$"
+    local old="${BIN_DIR}/.fury-old-databases-$"
+    local rollback_sql="${SNAPSHOT_ROOT}/.mysql-rollback-${name}-$.sql.gz"
     rm -rf "${stage}" "${old}"
+    rm -f "${rollback_sql}"
+
+    local defaults
+    defaults="$(mysql_defaults)"
+
+    echo "FURY snapshot: capturing MariaDB rollback image for ${DBNAME}"
+    if [ -n "${defaults}" ]; then
+        mysqldump "${defaults}" --single-transaction --quick --routines --triggers --events \
+            --add-drop-database --databases "${DBNAME}" | gzip -1 > "${rollback_sql}"
+    else
+        mysqldump --single-transaction --quick --routines --triggers --events \
+            --add-drop-database --databases "${DBNAME}" | gzip -1 > "${rollback_sql}"
+    fi
+    gzip -t "${rollback_sql}" ||
+        die "failed to create MariaDB rollback image"
+
     mkdir -p "${stage}"
     tar -C "${stage}" -xzf "${source}/berkeley.tar.gz"
-    [ -d "${stage}/databases" ] || die "snapshot archive does not contain databases/"
+    [ -d "${stage}/databases" ] || {
+        rm -rf "${stage}"
+        rm -f "${rollback_sql}"
+        die "snapshot archive does not contain databases/"
+    }
 
     if [ -d "${DB_DIR}" ]; then
         mv "${DB_DIR}" "${old}"
@@ -157,12 +178,10 @@ restore_snapshot() {
     if ! mv "${stage}/databases" "${DB_DIR}"; then
         [ ! -d "${old}" ] || mv "${old}" "${DB_DIR}"
         rm -rf "${stage}"
+        rm -f "${rollback_sql}"
         die "failed to install Berkeley snapshot"
     fi
     rm -rf "${stage}"
-
-    local defaults
-    defaults="$(mysql_defaults)"
 
     echo "FURY snapshot: restoring MariaDB database ${DBNAME}"
     set +e
@@ -175,12 +194,31 @@ restore_snapshot() {
     set -e
 
     if [ "${mysql_rc}" -ne 0 ]; then
+        echo "FURY snapshot: MariaDB restore failed; rolling back both stores" >&2
+
         rm -rf "${DB_DIR}"
         [ ! -d "${old}" ] || mv "${old}" "${DB_DIR}"
-        die "MariaDB restore failed; Berkeley directory reverted"
+
+        set +e
+        if [ -n "${defaults}" ]; then
+            gzip -dc "${rollback_sql}" | mysql "${defaults}"
+        else
+            gzip -dc "${rollback_sql}" | mysql
+        fi
+        local rollback_rc="${PIPESTATUS[1]}"
+        set -e
+
+        rm -f "${rollback_sql}"
+
+        if [ "${rollback_rc}" -ne 0 ]; then
+            die "MariaDB snapshot restore failed and MariaDB rollback also failed; Berkeley was reverted"
+        fi
+
+        die "MariaDB restore failed; Berkeley and MariaDB were reverted"
     fi
 
     rm -rf "${old}"
+    rm -f "${rollback_sql}"
     echo "FURY snapshot restored: ${name}"
 }
 
