@@ -14,6 +14,12 @@ cfg="${HOME_DIR}/workspace/Core3/MMOCoreORB/bin/conf/config-local.lua"
 cat > "${cfg}" <<'EOF'
 -- unrelated local config must survive
 ZoneGalaxyID = 2
+-- BEGIN FURY MARKET PROBE
+Fury = Fury or {}
+Fury.Economy = Fury.Economy or {}
+Fury.Economy.ExecutePurchases = 0
+Fury.Economy.CanaryProbe = 1
+-- END FURY MARKET PROBE
 EOF
 
 "${runner}" 6 18446744073709551615 9223372036854775808 --config-only
@@ -24,6 +30,8 @@ grep -F 'Fury.Economy.CanaryListingId = "18446744073709551615"' "${cfg}"
 grep -F 'Fury.Economy.CanaryOwnerId = "9223372036854775808"' "${cfg}"
 grep -F 'Fury.Economy.FailureInjectionStage = 6' "${cfg}"
 grep -F 'Fury.Economy.DemandRecoveryPerTick = 0.0' "${cfg}"
+grep -F 'Fury.Economy.CanaryProbe = 0' "${cfg}"
+! grep -F -- '-- BEGIN FURY MARKET PROBE' "${cfg}"
 
 "${runner}" 3 123 456 --config-only
 [ "$(grep -c -- '-- BEGIN FURY MARKET CANARY' "${cfg}")" -eq 1 ]
@@ -44,6 +52,16 @@ fi
 
 if "${runner}" 2 123 456 --restore baseline --config-only; then
     echo "--restore with --config-only unexpectedly accepted" >&2
+    exit 1
+fi
+
+if "${runner}" 2 123 456 --verify baseline --config-only; then
+    echo "--verify with --config-only unexpectedly accepted" >&2
+    exit 1
+fi
+
+if "${runner}" 0 123 456 --verify baseline; then
+    echo "stage 0 unexpectedly accepted --verify" >&2
     exit 1
 fi
 

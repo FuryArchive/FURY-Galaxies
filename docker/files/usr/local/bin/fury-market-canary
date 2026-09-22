@@ -11,13 +11,14 @@ MAX_U64=18446744073709551615
 usage() {
     cat <<'EOF'
 Usage:
-  fury-market-canary <stage 0..6> <listing-oid> <seller-oid> [--restore NAME] [--config-only] [--rebuild]
+  fury-market-canary <stage 0..6> <listing-oid> <seller-oid> [--restore NAME] [--verify NAME] [--config-only] [--rebuild]
 
 Stages 1..6 run core3 directly and expect the configured failure injection to
 abort the process. Stage 0 is the normal-success canary and runs in foreground.
 
 Options:
-  --restore NAME restore a saved FURY baseline before configuring/running
+  --restore NAME restore a saved FURY database baseline before configuring/running
+  --verify NAME  after crash stages 1..6, probe and verify against baseline NAME
   --config-only  update the FURY canary config block and exit
   --rebuild      force a local Core3 rebuild before running
 EOF
@@ -67,6 +68,8 @@ write_canary_block() {
     awk '
         /^-- BEGIN FURY MARKET CANARY$/ { skip=1; next }
         /^-- END FURY MARKET CANARY$/   { skip=0; next }
+        /^-- BEGIN FURY MARKET PROBE$/  { skip=1; next }
+        /^-- END FURY MARKET PROBE$/    { skip=0; next }
         !skip { print }
     ' "${CFG}" > "${tmp}"
 
@@ -200,6 +203,7 @@ shift 3
 config_only=0
 rebuild=0
 restore_name=""
+verify_name=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -212,6 +216,11 @@ while [ "$#" -gt 0 ]; do
         --restore)
             [ "$#" -ge 2 ] || die "--restore requires a snapshot name"
             restore_name="$2"
+            shift
+            ;;
+        --verify)
+            [ "$#" -ge 2 ] || die "--verify requires a baseline probe name"
+            verify_name="$2"
             shift
             ;;
         -h|--help)
@@ -230,6 +239,15 @@ valid_u64 "${listing}" || die "invalid listing OID: ${listing}"
 valid_u64 "${owner}" || die "invalid seller OID: ${owner}"
 [ "${listing}" != "0" ] || die "listing OID must be non-zero"
 [ "${owner}" != "0" ] || die "seller OID must be non-zero"
+
+if [ -n "${verify_name}" ]; then
+    [[ "${verify_name}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] ||
+        die "invalid verify baseline name: ${verify_name}"
+    [ "${config_only}" -eq 0 ] ||
+        die "--verify cannot be combined with --config-only"
+    [ "${stage}" -ne 0 ] ||
+        die "--verify is for crash stages 1..6; verify normal stage 0 after stopping it"
+fi
 
 if [ -n "${restore_name}" ]; then
     [ "${config_only}" -eq 0 ] || die "--restore cannot be combined with --config-only"
@@ -265,4 +283,17 @@ if [ "${stage}" -eq 0 ]; then
     run_success_stage
 else
     run_crash_stage "${stage}"
+
+    if [ -n "${verify_name}" ]; then
+        probe_bin="${FURY_MARKET_PROBE_BIN:-/usr/local/bin/fury-market-probe}"
+        verify_bin="${FURY_MARKET_VERIFY_BIN:-/usr/local/bin/fury-market-verify}"
+        observed_name="${verify_name}-stage-${stage}-after"
+
+        [ -x "${probe_bin}" ] || die "probe helper not found: ${probe_bin}"
+        [ -x "${verify_bin}" ] || die "verify helper not found: ${verify_bin}"
+
+        "${probe_bin}" inspect             "${listing}"             "${owner}"             "${verify_name}"             "${observed_name}"
+
+        "${verify_bin}" "${stage}" "${verify_name}" "${observed_name}"
+    fi
 fi

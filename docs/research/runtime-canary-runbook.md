@@ -77,7 +77,20 @@ The snapshot contains both the MariaDB application database and the complete
 Berkeley `MMOCoreORB/bin/databases` directory. Both stores are required for a
 repeatable crash/restart proof.
 
-Each crash stage can then restore that baseline automatically:
+Each crash stage can then restore that baseline automatically. If a baseline
+probe with the same name exists, `--verify` turns the whole crash/restart proof
+into one command:
+
+```bash
+fury-market-canary 1 <listing-oid> <seller-oid> --restore baseline --verify baseline
+```
+
+The runner restores the database snapshot, executes the intentional crash,
+launches a read-only `core3 shutdown` probe against the crashed state, then
+runs the machine verifier.
+
+Without `--verify`, the restore-only form remains available:
+
 
 ```bash
 fury-market-canary 1 <listing-oid> <seller-oid> --restore baseline
