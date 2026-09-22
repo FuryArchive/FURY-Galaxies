@@ -137,6 +137,9 @@ class AuctionManager extends ManagedService implements Logger {
 		boolean expectedQualityKnown);
 
 	@local
+	private native boolean createFuryMarketFixture();
+
+	@local
 	private native void writeFuryCanaryProbe();
 
 	@local
