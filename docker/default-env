@@ -1,5 +1,6 @@
 GALAXY_NAME=swgemu-core3
 IMAGE=swgemu/core3-dev:latest
+TRE_VOLUME=shared-tre
 
 # FURY market runtime remains fail-closed by default.
 FURY_ECONOMY_OBSERVE_VENDOR_MARKET=0

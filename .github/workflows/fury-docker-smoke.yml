@@ -20,6 +20,7 @@ jobs:
         run: |
           bash -n docker/build.sh
           bash -n docker/run.sh
+          bash -n docker/tre.sh
           bash -n docker/files/run.sh
           bash -n docker/files/firstboot/functions
           bash -n docker/files/usr/local/bin/fury-market-canary

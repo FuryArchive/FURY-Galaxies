@@ -411,7 +411,18 @@ bool AuctionManagerImplementation::createFuryMarketFixture() {
 	Reference<CreditObject*> sellerCredits = CreditManager::getCreditObject(sellerId);
 
 	if (sellerCredits == nullptr) {
-		error() << "FURY market fixture: no CreditObject found for seller OID " << sellerId;
+		const uint64 creditDatabaseId =
+			ObjectDatabaseManager::instance()->getDatabaseID("credits");
+		const uint64 creditObjectId =
+			((sellerId & 0x0000FFFFFFFFFFFFull) | (creditDatabaseId << 48));
+
+		ObjectManager::instance()->loadPersistentObject(creditObjectId);
+		sellerCredits =
+			Core::getObjectBroker()->lookUp(creditObjectId).castTo<CreditObject*>();
+	}
+
+	if (sellerCredits == nullptr || sellerCredits->getOwnerObjectID() != sellerId) {
+		error() << "FURY market fixture: no valid persistent CreditObject found for seller OID " << sellerId;
 		return false;
 	}
 
