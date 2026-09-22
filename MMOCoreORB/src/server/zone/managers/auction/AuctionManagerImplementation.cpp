@@ -677,6 +677,10 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 
 	SettlementReceipt receipt;
 
+	// Isolate the settlement's durable transaction from any stale worker-local
+	// database updates left before this task's mutation phase.
+	ObjectDatabaseManager::instance()->commitLocalTransaction();
+
 	Locker sellingLocker(sellingObject, item);
 	Locker creditLocker(sellerCredits, sellingObject);
 	Locker demandLocker(furyEconomyState, sellerCredits);
