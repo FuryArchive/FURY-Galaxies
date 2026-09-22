@@ -6,7 +6,6 @@
  */
 
 #include "server/zone/managers/auction/AuctionManager.h"
-#include "server/ServerCore.h"
 #include "server/zone/managers/fury/economy/FuryMarketObserver.h"
 #include "server/zone/managers/fury/economy/FuryMarketDryRun.h"
 #include "server/zone/managers/fury/economy/FuryMarketTickTask.h"
@@ -15,6 +14,7 @@
 #include "server/zone/managers/fury/economy/FurySettlementSafety.h"
 #include "server/zone/managers/fury/economy/FuryExecutionScope.h"
 #include "server/zone/managers/fury/economy/FuryExecutionPolicy.h"
+#include "server/zone/managers/fury/economy/FuryCanaryShutdownTask.h"
 #include "server/zone/managers/fury/economy/FuryDemandModel.h"
 #include "server/zone/managers/fury/economy/FuryItemQuality.h"
 #include "server/zone/managers/fury/economy/FuryEconomyState.h"
@@ -1437,14 +1437,13 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 	if (ConfigManager::instance()->getBool("Fury.Economy.CanaryAutoShutdown", false) &&
 		executionScope.canaryOnly &&
 		executionScope.listingId == listingId) {
-		ServerCore* core = ServerCore::getInstance();
+		Reference<FuryCanaryShutdownTask*> shutdownTask =
+			new FuryCanaryShutdownTask(listingId);
+		shutdownTask->schedule(1000);
 
-		if (core != nullptr) {
-			info(true)
-				<< "FURY market canary success; requesting graceful shutdown, listing="
-				<< listingId;
-			core->queueConsoleCommand("shutdown 0");
-		}
+		info(true)
+			<< "FURY market canary success; scheduled graceful shutdown, listing="
+			<< listingId;
 	}
 }
 

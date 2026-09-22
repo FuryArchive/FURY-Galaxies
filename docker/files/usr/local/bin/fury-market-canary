@@ -218,8 +218,8 @@ run_success_stage() {
     grep -F "FURY economy purchase durably settled: listing=${listing}" "${logfile}" >/dev/null ||
         die "stage 0 exited without the durable settlement marker"
 
-    grep -F "FURY market canary success; requesting graceful shutdown, listing=${listing}" "${logfile}" >/dev/null ||
-        die "stage 0 exited without the canary auto-shutdown marker"
+    grep -F "FURY market canary success; queued graceful shutdown, listing=${listing}" "${logfile}" >/dev/null ||
+        die "stage 0 exited without the canary queued-shutdown marker"
 
     echo "FURY canary: stage 0 committed and shut down cleanly"
 }
