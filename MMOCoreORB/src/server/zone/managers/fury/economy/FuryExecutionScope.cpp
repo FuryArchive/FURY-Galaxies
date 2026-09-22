@@ -5,6 +5,9 @@ bool FuryExecutionScopeGuard::allows(
 	std::uint64_t candidateListingId,
 	std::uint64_t candidateOwnerId) {
 
+	if (!scope.valid)
+		return false;
+
 	if (!scope.canaryOnly)
 		return true;
 

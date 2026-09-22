@@ -6,6 +6,12 @@
 int main() {
 	FuryExecutionScope scope;
 
+	scope.valid = false;
+	scope.canaryOnly = false;
+	assert(!FuryExecutionScopeGuard::allows(scope, 123, 456));
+
+	scope.valid = true;
+	scope.canaryOnly = true;
 	assert(!FuryExecutionScopeGuard::allows(scope, 123, 456));
 
 	scope.listingId = 123;

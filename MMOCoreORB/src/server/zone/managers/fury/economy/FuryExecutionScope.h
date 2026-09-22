@@ -5,6 +5,7 @@
 
 struct FuryExecutionScope {
 	bool canaryOnly = true;
+	bool valid = true;
 	std::uint64_t listingId = 0;
 	std::uint64_t ownerId = 0;
 };
