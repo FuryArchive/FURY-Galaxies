@@ -462,6 +462,9 @@ void AuctionManagerImplementation::runFuryMarketTick() {
 
 			info(true)
 				<< "FURY market decision: listing=" << entry.listing.listingId
+				<< ", auctionRecord=" << entry.listing.auctionRecordId
+				<< ", vendor=" << entry.listing.vendorId
+				<< ", owner=" << entry.listing.ownerId
 				<< ", type=" << entry.listing.effectiveItemType
 				<< ", comparisonKey=" << entry.listing.comparisonKey
 				<< ", planetCrc=" << entry.listing.planetCrc

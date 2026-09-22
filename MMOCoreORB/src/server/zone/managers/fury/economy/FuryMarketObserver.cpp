@@ -71,6 +71,7 @@ std::vector<FuryMarketListing> FuryMarketObserver::collectListings(TerminalListV
 
 			FuryMarketListing listing;
 			listing.listingId = item->getAuctionedItemObjectID();
+			listing.auctionRecordId = item->getObjectID();
 			listing.vendorId = item->getVendorID();
 			listing.ownerId = item->getOwnerID();
 			listing.itemType = item->getItemType();
