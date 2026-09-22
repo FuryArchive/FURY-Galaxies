@@ -6,8 +6,8 @@ on:
       - fury-dev
     paths:
       - "MMOCoreORB/src/server/zone/managers/fury/economy/**"
-      - "MMOCoreORB/src/tests/FuryMarket*Test.cpp"
-      - "scripts/fury/market-*-smoke.cpp"
+      - "MMOCoreORB/src/tests/Fury*Test.cpp"
+      - "scripts/fury/*-smoke.cpp"
       - ".github/workflows/fury-market-model.yml"
   workflow_dispatch:
 
@@ -23,7 +23,11 @@ jobs:
 
       - name: Compile deterministic market model
         run: |
-          g++ -std=c++14 -Wall -Wextra -Werror             -I MMOCoreORB/src             scripts/fury/market-model-smoke.cpp             MMOCoreORB/src/server/zone/managers/fury/economy/FuryMarketModel.cpp             -o /tmp/fury-market-model-smoke
+          g++ -std=c++14 -Wall -Wextra -Werror \
+            -I MMOCoreORB/src \
+            scripts/fury/market-model-smoke.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FuryMarketModel.cpp \
+            -o /tmp/fury-market-model-smoke
 
       - name: Run market model smoke
         run: /tmp/fury-market-model-smoke
@@ -50,3 +54,14 @@ jobs:
 
       - name: Run demand model smoke
         run: /tmp/fury-demand-model-smoke
+
+      - name: Compile settlement planner
+        run: |
+          g++ -std=c++14 -Wall -Wextra -Werror \
+            -I MMOCoreORB/src \
+            scripts/fury/settlement-plan-smoke.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FurySettlementPlan.cpp \
+            -o /tmp/fury-settlement-plan-smoke
+
+      - name: Run settlement planner smoke
+        run: /tmp/fury-settlement-plan-smoke

@@ -9,6 +9,7 @@ Fury = Fury or {}
 Fury.Economy = {
 	ObserveVendorMarket = 1,
 	DryRun = 1,
+	ExecutePurchases = 0,
 	TickSeconds = 600,
 	DefaultDemand = 0.50,
 	PurchaseThreshold = 0.62,
