@@ -574,7 +574,7 @@ void AuctionManagerImplementation::writeFuryCanaryProbe() {
 		Locker sellerLocker(sellerCredits);
 		bankCredits = sellerCredits->getBankCredits();
 		cashCredits = sellerCredits->getCashCredits();
-		probe["sellerCreditOwnerId"] = sellerCredits->getOwnerID();
+		probe["sellerCreditOwnerId"] = sellerCredits->getOwnerObjectID();
 	}
 
 	probe["sellerBank"] = bankCredits;
