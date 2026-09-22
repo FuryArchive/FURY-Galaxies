@@ -6,6 +6,7 @@
  */
 
 #include "server/zone/managers/auction/AuctionManager.h"
+#include "server/ServerCore.h"
 #include "server/zone/managers/fury/economy/FuryMarketObserver.h"
 #include "server/zone/managers/fury/economy/FuryMarketDryRun.h"
 #include "server/zone/managers/fury/economy/FuryMarketTickTask.h"
@@ -1431,6 +1432,19 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 			<< receipt.grossPrice << " credits"
 			<< (receipt.tax > 0 ? " before city sales tax." : ".");
 		onlineSeller->sendSystemMessage(message.toString());
+	}
+
+	if (ConfigManager::instance()->getBool("Fury.Economy.CanaryAutoShutdown", false) &&
+		executionScope.canaryOnly &&
+		executionScope.listingId == listingId) {
+		ServerCore* core = ServerCore::getInstance();
+
+		if (core != nullptr) {
+			info(true)
+				<< "FURY market canary success; requesting graceful shutdown, listing="
+				<< listingId;
+			core->queueConsoleCommand("shutdown 0");
+		}
 	}
 }
 

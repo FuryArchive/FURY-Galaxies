@@ -170,8 +170,18 @@ before best-effort post-commit logging.
 
 ## Normal canary success
 
-Finally reset once more, set `FailureInjectionStage = 0`, and perform one
-canary purchase.
+Stage 0 is automated as well:
+
+```bash
+fury-market-canary 0 <listing-oid> <seller-oid> --restore baseline --verify baseline
+```
+
+For this run only, the runner sets `CanaryAutoShutdown=1`. After the exact
+canary listing commits, post-commit audit/notification code completes and the
+settlement queues Core3's native `shutdown 0` console command. The runner
+requires a clean process exit plus the durable-settlement and auto-shutdown log
+markers before it launches the same post-restart probe/verifier used by stage
+6.
 
 Verify:
 

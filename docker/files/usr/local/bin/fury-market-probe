@@ -98,6 +98,7 @@ Fury.Economy.DryRun = 1
 Fury.Economy.ExecutePurchases = 0
 Fury.Economy.PersistDemand = 1
 Fury.Economy.CanaryProbe = 1
+Fury.Economy.CanaryAutoShutdown = 0
 Fury.Economy.CanaryProbeOutput = "${output}"
 Fury.Economy.CanaryProbeBaseline = "${baseline}"
 -- END FURY MARKET PROBE

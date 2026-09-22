@@ -14,6 +14,7 @@ Fury.Economy = {
 	CanaryListingId = "0", -- full 64-bit auctioned item/listing OID
 	CanaryOwnerId = "0", -- optional full 64-bit seller OID
 	CanaryProbe = 0,
+	CanaryAutoShutdown = 0, -- runner enables only for stage 0 success canary
 	CanaryProbeOutput = "log/fury-market-canary-probe.json",
 	CanaryProbeBaseline = "",
 	PersistDemand = 0, -- enable only after the persistence slice is runtime-validated

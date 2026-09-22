@@ -264,6 +264,7 @@ Fury = {
 		CanaryListingId = "0",
 		CanaryOwnerId = "0",
 		CanaryProbe = 0,
+		CanaryAutoShutdown = 0,
 		CanaryProbeOutput = "log/fury-market-canary-probe.json",
 		CanaryProbeBaseline = "",
 		PersistDemand = 0,

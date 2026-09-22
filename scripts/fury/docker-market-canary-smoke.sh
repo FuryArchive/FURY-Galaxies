@@ -31,6 +31,7 @@ grep -F 'Fury.Economy.CanaryOwnerId = "9223372036854775808"' "${cfg}"
 grep -F 'Fury.Economy.FailureInjectionStage = 6' "${cfg}"
 grep -F 'Fury.Economy.DemandRecoveryPerTick = 0.0' "${cfg}"
 grep -F 'Fury.Economy.CanaryProbe = 0' "${cfg}"
+grep -F 'Fury.Economy.CanaryAutoShutdown = 0' "${cfg}"
 ! grep -F -- '-- BEGIN FURY MARKET PROBE' "${cfg}"
 
 "${runner}" 3 123 456 --config-only
@@ -60,9 +61,7 @@ if "${runner}" 2 123 456 --verify baseline --config-only; then
     exit 1
 fi
 
-if "${runner}" 0 123 456 --verify baseline; then
-    echo "stage 0 unexpectedly accepted --verify" >&2
-    exit 1
-fi
+"${runner}" 0 123 456 --config-only
+grep -F 'Fury.Economy.CanaryAutoShutdown = 1' "${cfg}"
 
 echo "FURY market canary runner smoke OK"
