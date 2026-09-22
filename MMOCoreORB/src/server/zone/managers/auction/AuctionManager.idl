@@ -116,6 +116,9 @@ class AuctionManager extends ManagedService implements Logger {
 
 	public native void checkVendorItems(boolean startupTask = false);
 
+	@local
+	public native void runFuryMarketTick();
+
 	public native void checkAuctions(boolean startupTask = false);
 
 	@local
