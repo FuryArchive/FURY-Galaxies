@@ -3,7 +3,7 @@
 
 #include <cstdint>
 
-class SceneObject;
+namespace server { namespace zone { namespace objects { namespace scene { class SceneObject; } } } }
 
 enum class FuryItemQualityKind {
 	Unknown = 0,
@@ -21,7 +21,7 @@ struct FuryItemQuality {
 
 class FuryItemQualityExtractor {
 public:
-	static FuryItemQuality inspect(SceneObject* object);
+	static FuryItemQuality inspect(server::zone::objects::scene::SceneObject* object);
 };
 
 #endif // FURYITEMQUALITY_H_
