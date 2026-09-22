@@ -23,14 +23,14 @@ jobs:
 
       - name: Compile deterministic market model
         run: |
-          g++ -std=c++17 -Wall -Wextra -Werror             -I MMOCoreORB/src             scripts/fury/market-model-smoke.cpp             MMOCoreORB/src/server/zone/managers/fury/economy/FuryMarketModel.cpp             -o /tmp/fury-market-model-smoke
+          g++ -std=c++14 -Wall -Wextra -Werror             -I MMOCoreORB/src             scripts/fury/market-model-smoke.cpp             MMOCoreORB/src/server/zone/managers/fury/economy/FuryMarketModel.cpp             -o /tmp/fury-market-model-smoke
 
       - name: Run market model smoke
         run: /tmp/fury-market-model-smoke
 
       - name: Compile dry-run market
         run: |
-          g++ -std=c++17 -Wall -Wextra -Werror \
+          g++ -std=c++14 -Wall -Wextra -Werror \
             -I MMOCoreORB/src \
             scripts/fury/market-dry-run-smoke.cpp \
             MMOCoreORB/src/server/zone/managers/fury/economy/FuryMarketModel.cpp \
