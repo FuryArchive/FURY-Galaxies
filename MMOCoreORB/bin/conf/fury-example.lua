@@ -13,4 +13,5 @@ Fury.Economy = {
 	TickSeconds = 600,
 	DefaultDemand = 0.50,
 	PurchaseThreshold = 0.62,
+	DryRunLogLimit = 20,
 }

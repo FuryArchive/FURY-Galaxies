@@ -3,68 +3,69 @@
 ## 2026-09-22
 
 ### Foundation
-- Fork created from `swgemu/Core3`.
-- Development branch: `fury-dev`.
-- Upstream tracking branch: `unstable`.
-- FURY code isolated under `MMOCoreORB/src/server/zone/managers/fury/`.
-- Local bootstrap, environment doctor and upstream-sync helpers added.
-- Lightweight market CI is active.
-- Full Core3 build gate is active and uses the real Core3 C++14/IDL build.
+- Fork: `FuryArchive/FURY-Galaxies`
+- Upstream tracking base: `unstable`
+- FURY development: `fury-dev`
+- Draft integration PR: #1
+- FURY-specific server code isolated under `MMOCoreORB/src/server/zone/managers/fury/`
+- Bootstrap, environment doctor and upstream-sync helpers are present.
 
-### Economy Spike 001
+### Economy vertical slice
 
 Implemented:
-- read-only `FuryMarketObserver` over native Core3 vendor listings;
-- portable `FuryMarketListing` snapshots from real `AuctionItem` data;
-- factory-crate prototype type handling;
-- deterministic `FuryMarketModel`;
-- explicit unknown-quality handling (no invented average quality);
-- category-relative dry-run pricing;
-- fixed-price-only dry-run buyer decisions;
-- dedicated `FuryMarketTickTask` independent of Core3's hourly auction maintenance;
-- configurable tick interval, demand and purchase threshold;
-- smoke/unit coverage for pure market logic.
+- native `AuctionManager` integration;
+- dedicated FURY market scheduler independent of Core3's hourly auction maintenance;
+- configurable tick interval;
+- read-only collection of real native vendor listings;
+- fixed-price listing filtering;
+- robust median reference pricing per real item type;
+- deterministic purchase decision model;
+- unknown-quality handling without fabricated scores;
+- real weapon quality signal from crafted min/max damage + attack speed + condition;
+- real armor quality signal from protection stats + condition;
+- factory crate quality via the crate prototype;
+- demand saturation/recovery model;
+- settlement planner matching Core3's inclusive city-tax semantics;
+- explicit `ExecutePurchases = 0` hard default;
+- detailed dry-run logging for individual candidate listings.
 
-Current runtime behavior:
-```
-native player vendor
-    -> AuctionsMap / AuctionItem
-    -> FuryMarketObserver
-    -> FuryMarketListing
-    -> FuryMarketDryRun
-    -> log: eligible / wouldPurchase
-```
+Still read-only:
+- no listing is removed;
+- no item is destroyed;
+- no seller receives credits from FURY;
+- no city receives FURY tax;
+- no dynamic demand is persisted.
 
-No item, credit, vendor, owner or demand state is mutated.
+### Current verification gates
 
-### Native settlement research
+1. **Pure model smoke CI**
+   - market decision;
+   - dry-run pricing;
+   - demand dynamics;
+   - settlement planning.
 
-Core3's `doInstantBuy` is not suitable for a synthetic NPC buyer as-is. It combines:
-- buyer bank debit;
-- auction ownership transfer;
-- buyer identity;
-- SOLD/retrieval lifecycle;
-- buyer and seller mail;
-- seller payment;
-- city sales tax.
+2. **Full Core3 build CI**
+   - validates IDL generation and actual integration with Core3.
 
-Decision: do **not** create fake NPC player creatures. The real purchase milestone will introduce a reusable server-side settlement primitive with separate player-purchase and simulated-market semantics.
+3. **Runtime proof**
+   - boot local server;
+   - enable observer;
+   - craft/list a real item on a native vendor;
+   - verify listing, real stats, price reference and dry-run decision in server log.
 
-### Immediate gates
-1. Full Core3 build green on current `fury-dev`.
-2. Local server boot with legally obtained TRE assets.
-3. Real crafted item listed on a native player vendor.
-4. FURY tick observes that listing.
-5. Dry-run buyer scores that real listing.
-6. Add item-type-specific quality extraction, starting with weapons/armor.
-7. Implement exactly-once simulated settlement.
-8. Persist regional demand across restart.
+### Next implementation after green full build
+- add regional demand keys from the listing's actual vendor/planet;
+- persist demand state through Core3 persistence;
+- extract shared seller-payment/tax settlement from native `doInstantBuy`;
+- add simulated-market settlement behind `ExecutePurchases`;
+- enforce exactly-once purchase semantics;
+- test restart/crash behavior before enabling mutations.
 
-### Still deliberately deferred
-- actual NPC purchases;
-- settlement/city progression;
+### Non-goals until the proof is complete
+- custom client UI;
 - companions;
-- global profession/skill-point rebalance;
-- custom client UI.
+- settlement/city progression;
+- broad progression rebalance;
+- economy-wide tuning.
 
-The rule remains: no destructive simulation until the read-only path is proven end to end.
+Those come after the vendor vertical slice is demonstrably safe.

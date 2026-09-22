@@ -324,6 +324,32 @@ void AuctionManagerImplementation::runFuryMarketTick() {
 			<< ", wouldPurchase=" << dryRun.wouldPurchase
 			<< ", defaultDemand=" << defaultDemand
 			<< ", purchaseThreshold=" << purchaseThreshold;
+
+		int logLimit = ConfigManager::instance()->getInt("Fury.Economy.DryRunLogLimit", 10);
+
+		if (logLimit < 0)
+			logLimit = 0;
+
+		const int decisionCount = static_cast<int>(dryRun.decisions.size());
+		const int decisionsToLog = logLimit < decisionCount ? logLimit : decisionCount;
+
+		for (int i = 0; i < decisionsToLog; ++i) {
+			const auto& entry = dryRun.decisions[i];
+
+			info(true)
+				<< "FURY market decision: listing=" << entry.listing.listingId
+				<< ", type=" << entry.listing.effectiveItemType
+				<< ", price=" << entry.listing.askingPrice
+				<< ", referencePrice=" << entry.referencePrice
+				<< ", comparables=" << entry.comparableListings
+				<< ", qualityKnown=" << entry.listing.qualitySignalKnown
+				<< ", qualitySignal=" << entry.listing.qualitySignal
+				<< ", qualityScore=" << entry.decision.qualityScore
+				<< ", priceScore=" << entry.decision.priceScore
+				<< ", demandScore=" << entry.decision.demandScore
+				<< ", score=" << entry.decision.score
+				<< ", wouldPurchase=" << entry.decision.purchase;
+		}
 	}
 
 	int tickSeconds = ConfigManager::instance()->getInt("Fury.Economy.TickSeconds", 600);
