@@ -26,6 +26,7 @@
 #include "server/zone/packets/auction/RetrieveAuctionItemResponseMessage.h"
 #include "server/zone/packets/auction/BidAuctionResponseMessage.h"
 #include "server/zone/packets/scene/AttributeListMessage.h"
+#include "server/zone/packets/DeltaMessage.h"
 #include "server/chat/StringIdChatParameter.h"
 #include "server/zone/objects/creature/CreatureObject.h"
 #include "server/zone/objects/player/PlayerObject.h"
@@ -786,6 +787,20 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 		Reference<CreatureObject*> onlineSeller = sellerCredits->getOwner().get();
 
 		if (onlineSeller != nullptr && onlineSeller->isOnline()) {
+			DeltaMessage* bankDelta =
+				new DeltaMessage(onlineSeller->getObjectID(), 'CREO', 1);
+			bankDelta->startUpdate(0x00);
+			bankDelta->insertInt(sellerCredits->getBankCredits());
+			bankDelta->close();
+			onlineSeller->sendMessage(bankDelta);
+
+			DeltaMessage* cashDelta =
+				new DeltaMessage(onlineSeller->getObjectID(), 'CREO', 1);
+			cashDelta->startUpdate(0x01);
+			cashDelta->insertInt(sellerCredits->getCashCredits());
+			cashDelta->close();
+			onlineSeller->sendMessage(cashDelta);
+
 			StringBuffer message;
 			message
 				<< "FURY market purchased one of your listings for "
