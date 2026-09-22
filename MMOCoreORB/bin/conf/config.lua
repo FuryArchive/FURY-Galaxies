@@ -251,3 +251,15 @@ Core3 = {
 }
 
 -- NOTE: conf/config-local.lua is parsed after this file if it exists
+
+
+-- FURY Galaxies server-side extensions.
+-- Keep risky simulation features disabled until explicitly enabled in config-local.lua.
+Fury = {
+	Economy = {
+		ObserveVendorMarket = 0,
+		DryRun = 1,
+		TickSeconds = 600,
+		PurchaseThreshold = 0.62,
+	},
+}
