@@ -378,23 +378,26 @@ bool AuctionManagerImplementation::createFuryMarketFixture() {
 		return false;
 	}
 
-	uint64 sellerId = 0;
-	uint64 configuredVendorId = 0;
+	std::uint64_t parsedSellerId = 0;
+	std::uint64_t parsedVendorId = 0;
 	const String sellerText =
 		ConfigManager::instance()->getString("Fury.Economy.CanaryFixtureSellerId", "0").trim();
 	const String vendorText =
 		ConfigManager::instance()->getString("Fury.Economy.CanaryFixtureVendorId", "0").trim();
 
-	if (!FuryExecutionScopeGuard::parseDecimalOid(sellerText.toCharArray(), sellerId) ||
-		sellerId == 0) {
+	if (!FuryExecutionScopeGuard::parseDecimalOid(sellerText.toCharArray(), parsedSellerId) ||
+		parsedSellerId == 0) {
 		error() << "FURY market fixture: invalid seller OID [" << sellerText << "]";
 		return false;
 	}
 
-	if (!FuryExecutionScopeGuard::parseDecimalOid(vendorText.toCharArray(), configuredVendorId)) {
+	if (!FuryExecutionScopeGuard::parseDecimalOid(vendorText.toCharArray(), parsedVendorId)) {
 		error() << "FURY market fixture: invalid vendor OID [" << vendorText << "]";
 		return false;
 	}
+
+	const uint64 sellerId = static_cast<uint64>(parsedSellerId);
+	const uint64 configuredVendorId = static_cast<uint64>(parsedVendorId);
 
 	ManagedReference<PlayerManager*> playerManager = zoneServer->getPlayerManager();
 	const String sellerName =
@@ -621,14 +624,40 @@ bool AuctionManagerImplementation::createFuryMarketFixture() {
 	std::vector<Reference<AuctionItem*>> auctionItems;
 	const int prices[3] = {targetPrice, comparablePrice, comparablePrice};
 
+	auto rollbackTransientFixture = [&] () {
+		for (auto& item : auctionItems) {
+			if (item == nullptr)
+				continue;
+
+			auctionMap->removeItem(vendor, item);
+			auctionMap->removeFromCommodityLimit(item);
+			item->destroyAuctionItemFromDatabase(false, false);
+		}
+
+		for (auto& weapon : weapons) {
+			if (weapon == nullptr)
+				continue;
+
+			Locker weaponLocker(weapon);
+			weapon->destroyObjectFromDatabase(true);
+		}
+
+		auctionItems.clear();
+		weapons.clear();
+	};
+
 	for (int i = 0; i < 3; ++i) {
 		ManagedReference<SceneObject*> scene =
-			zoneServer->createObject(templateCrc, 0, 0);
+			zoneServer->createObject(
+				templateCrc,
+				0,
+				static_cast<unsigned long long>(0));
 		ManagedReference<WeaponObject*> weapon =
 			scene != nullptr ? cast<WeaponObject*>(scene.get()) : nullptr;
 
 		if (weapon == nullptr) {
 			error() << "FURY market fixture: template is not a WeaponObject: " << templatePath;
+			rollbackTransientFixture();
 			return false;
 		}
 
@@ -673,6 +702,15 @@ bool AuctionManagerImplementation::createFuryMarketFixture() {
 			error()
 				<< "FURY market fixture: addItem failed: "
 				<< ItemSoldMessage::statusToString(addResult);
+
+			item->destroyAuctionItemFromDatabase(false, false);
+
+			{
+				Locker weaponLocker(weapon);
+				weapon->destroyObjectFromDatabase(true);
+			}
+
+			rollbackTransientFixture();
 			return false;
 		}
 
@@ -689,6 +727,7 @@ bool AuctionManagerImplementation::createFuryMarketFixture() {
 		error()
 			<< "FURY market fixture: expected exactly 3 fixture listings, got "
 			<< fixtureListings.size();
+		rollbackTransientFixture();
 		return false;
 	}
 
@@ -710,6 +749,7 @@ bool AuctionManagerImplementation::createFuryMarketFixture() {
 
 	if (!targetWouldPurchase) {
 		error("FURY market fixture: generated target is not a deterministic purchase candidate");
+		rollbackTransientFixture();
 		return false;
 	}
 
