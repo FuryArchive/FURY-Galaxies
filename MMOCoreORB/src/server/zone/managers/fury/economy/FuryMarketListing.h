@@ -10,6 +10,7 @@ struct FuryMarketListing {
 
 	int itemType = 0;
 	int effectiveItemType = 0;
+	std::uint32_t comparisonKey = 0;
 	int askingPrice = 0;
 	int size = 1;
 

@@ -90,7 +90,11 @@ std::vector<FuryMarketListing> FuryMarketObserver::collectListings(TerminalListV
 
 				listing.qualitySignalKnown = quality.known;
 				listing.qualitySignal = quality.rawSignal;
+				listing.comparisonKey = quality.templateCrc != 0 ? quality.templateCrc : static_cast<std::uint32_t>(listing.effectiveItemType);
 			}
+
+			if (listing.comparisonKey == 0)
+				listing.comparisonKey = static_cast<std::uint32_t>(listing.effectiveItemType);
 
 			listings.push_back(listing);
 		}

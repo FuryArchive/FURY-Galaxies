@@ -339,6 +339,7 @@ void AuctionManagerImplementation::runFuryMarketTick() {
 			info(true)
 				<< "FURY market decision: listing=" << entry.listing.listingId
 				<< ", type=" << entry.listing.effectiveItemType
+				<< ", comparisonKey=" << entry.listing.comparisonKey
 				<< ", price=" << entry.listing.askingPrice
 				<< ", referencePrice=" << entry.referencePrice
 				<< ", comparables=" << entry.comparableListings

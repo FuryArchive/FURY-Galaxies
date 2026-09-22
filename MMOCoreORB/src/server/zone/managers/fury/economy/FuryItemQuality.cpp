@@ -50,6 +50,8 @@ FuryItemQuality FuryItemQualityExtractor::inspect(SceneObject* object) {
 	if (subject == nullptr || !subject->isTangibleObject())
 		return result;
 
+	result.templateCrc = subject->getServerObjectCRC();
+
 	ManagedReference<TangibleObject*> tangible = cast<TangibleObject*>(subject);
 
 	if (tangible == nullptr)

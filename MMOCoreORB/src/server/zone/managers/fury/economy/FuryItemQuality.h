@@ -1,6 +1,8 @@
 #ifndef FURYITEMQUALITY_H_
 #define FURYITEMQUALITY_H_
 
+#include <cstdint>
+
 class SceneObject;
 
 enum class FuryItemQualityKind {
@@ -13,6 +15,7 @@ struct FuryItemQuality {
 	bool known = false;
 	FuryItemQualityKind kind = FuryItemQualityKind::Unknown;
 	float rawSignal = 0.0f;
+	std::uint32_t templateCrc = 0;
 	float conditionRatio = 1.0f;
 };
 

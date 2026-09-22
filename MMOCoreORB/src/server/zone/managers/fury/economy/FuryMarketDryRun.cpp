@@ -3,8 +3,13 @@
 #include <algorithm>
 #include <unordered_map>
 #include <vector>
+#include <cstdint>
 
 namespace {
+std::uint32_t marketComparisonKey(const FuryMarketListing& listing) {
+	return listing.comparisonKey != 0 ? listing.comparisonKey : static_cast<std::uint32_t>(listing.effectiveItemType);
+}
+
 int medianPrice(std::vector<int>& prices) {
 	if (prices.empty())
 		return 0;
@@ -55,21 +60,21 @@ FuryMarketDryRunSummary FuryMarketDryRun::evaluate(
 	float purchaseThreshold) {
 
 	FuryMarketDryRunSummary summary;
-	std::unordered_map<int, std::vector<int>> pricesByType;
-	std::unordered_map<int, std::vector<float>> qualityByType;
+	std::unordered_map<std::uint32_t, std::vector<int>> pricesByType;
+	std::unordered_map<std::uint32_t, std::vector<float>> qualityByType;
 
 	for (const auto& listing : listings) {
 		if (listing.auction || listing.askingPrice <= 0)
 			continue;
 
-		pricesByType[listing.effectiveItemType].push_back(listing.askingPrice);
+		pricesByType[marketComparisonKey(listing)].push_back(listing.askingPrice);
 
 		if (listing.qualitySignalKnown && listing.qualitySignal >= 0.0f)
-			qualityByType[listing.effectiveItemType].push_back(listing.qualitySignal);
+			qualityByType[marketComparisonKey(listing)].push_back(listing.qualitySignal);
 	}
 
-	std::unordered_map<int, int> referencePriceByType;
-	std::unordered_map<int, float> referenceQualityByType;
+	std::unordered_map<std::uint32_t, int> referencePriceByType;
+	std::unordered_map<std::uint32_t, float> referenceQualityByType;
 
 	for (auto& entry : pricesByType)
 		referencePriceByType[entry.first] = medianPrice(entry.second);
@@ -81,8 +86,8 @@ FuryMarketDryRunSummary FuryMarketDryRun::evaluate(
 		if (listing.auction || listing.askingPrice <= 0)
 			continue;
 
-		const auto pricesFound = pricesByType.find(listing.effectiveItemType);
-		const auto referenceFound = referencePriceByType.find(listing.effectiveItemType);
+		const auto pricesFound = pricesByType.find(marketComparisonKey(listing));
+		const auto referenceFound = referencePriceByType.find(marketComparisonKey(listing));
 
 		if (pricesFound == pricesByType.end() || referenceFound == referencePriceByType.end())
 			continue;
@@ -98,7 +103,7 @@ FuryMarketDryRunSummary FuryMarketDryRun::evaluate(
 		input.referencePrice = result.referencePrice;
 		input.listingId = listing.listingId;
 
-		const auto qualityReference = referenceQualityByType.find(listing.effectiveItemType);
+		const auto qualityReference = referenceQualityByType.find(marketComparisonKey(listing));
 
 		if (listing.qualitySignalKnown &&
 			qualityReference != referenceQualityByType.end() &&

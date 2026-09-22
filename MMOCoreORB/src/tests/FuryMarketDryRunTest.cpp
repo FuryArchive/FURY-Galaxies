@@ -97,3 +97,26 @@ TEST(FuryMarketDryRunTest, RealQualitySignalAffectsSameTypeRanking) {
 		result.decisions[1].decision.qualityScore,
 		result.decisions[0].decision.qualityScore);
 }
+
+TEST(FuryMarketDryRunTest, DifferentTemplatesOfSameClientTypeDoNotPollutePrice) {
+	std::vector<FuryMarketListing> listings;
+
+	FuryMarketListing cheapPistol;
+	cheapPistol.listingId = 500;
+	cheapPistol.effectiveItemType = 100;
+	cheapPistol.comparisonKey = 1111;
+	cheapPistol.askingPrice = 1000;
+	listings.push_back(cheapPistol);
+
+	FuryMarketListing premiumPistol = cheapPistol;
+	premiumPistol.listingId = 501;
+	premiumPistol.comparisonKey = 2222;
+	premiumPistol.askingPrice = 10000;
+	listings.push_back(premiumPistol);
+
+	auto result = FuryMarketDryRun::evaluate(listings, 0.5f, 0.60f);
+
+	ASSERT_EQ(result.decisions.size(), 2u);
+	EXPECT_EQ(result.decisions[0].referencePrice, 1000);
+	EXPECT_EQ(result.decisions[1].referencePrice, 10000);
+}
