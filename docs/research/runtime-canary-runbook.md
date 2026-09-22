@@ -42,6 +42,28 @@ Fury.Economy.DemandRecoveryPerTick = 0.0 -- isolate purchase-impact durability
 
 Leave all normal gross-price and category safety gates enabled.
 
+## Docker one-command runner
+
+Inside the FURY Docker runtime, use:
+
+```bash
+fury-market-canary <stage> <auctioned-item-oid> <seller-oid>
+```
+
+The runner writes/replaces one marked canary block at the end of
+`config-local.lua`, forces exact-listing canary mode, disables demand
+recovery, verifies `/tre`, starts MariaDB when needed, and automatically builds
+Core3 when the current git SHA differs from the last canary build.
+
+For stages 1-6 it launches `core3` directly rather than through the inherited
+gdb wrapper. This is intentional: the inherited gdb settings catch SIGABRT,
+which would otherwise stop the intentional failure-injection crash inside the
+debugger. The runner verifies that the expected stage marker appeared before
+accepting the crash as expected.
+
+Use `--config-only` to update the canary block without starting the server,
+or `--rebuild` to force a compile.
+
 ## Failure stages 1-5: must roll back by restart
 
 Run the same untouched database snapshot separately with

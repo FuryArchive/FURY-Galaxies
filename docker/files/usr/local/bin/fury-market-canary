@@ -1,0 +1,239 @@
+#!/bin/bash
+set -eo pipefail
+
+HOME_DIR="${HOME_DIR:-/home/swgemu}"
+REPO_DIR="${FURY_CORE3_REPO:-${HOME_DIR}/workspace/Core3}"
+BIN_DIR="${REPO_DIR}/MMOCoreORB/bin"
+CFG="${BIN_DIR}/conf/config-local.lua"
+BUILD_STAMP="${HOME_DIR}/.fury-core3-build-sha"
+MAX_U64=18446744073709551615
+
+usage() {
+    cat <<'EOF'
+Usage:
+  fury-market-canary <stage 0..6> <listing-oid> <seller-oid> [--config-only] [--rebuild]
+
+Stages 1..6 run core3 directly and expect the configured failure injection to
+abort the process. Stage 0 is the normal-success canary and runs in foreground.
+
+Options:
+  --config-only  update the FURY canary config block and exit
+  --rebuild      force a local Core3 rebuild before running
+EOF
+}
+
+die() {
+    echo "FURY CANARY ERROR: $*" >&2
+    exit 2
+}
+
+valid_u64() {
+    local raw="$1"
+    [[ "${raw}" =~ ^[0-9]+$ ]] || return 1
+
+    local normalized
+    normalized="$(printf '%s' "${raw}" | sed 's/^0*//')"
+    if [ -z "${normalized}" ]; then
+        normalized=0
+    fi
+
+    if [ "${#normalized}" -lt 20 ]; then
+        return 0
+    fi
+
+    if [ "${#normalized}" -gt 20 ]; then
+        return 1
+    fi
+
+    [[ "${normalized}" < "${MAX_U64}" || "${normalized}" == "${MAX_U64}" ]]
+}
+
+write_canary_block() {
+    local stage="$1"
+    local listing="$2"
+    local owner="$3"
+    local tick="${FURY_CANARY_TICK_SECONDS:-10}"
+
+    [[ "${tick}" =~ ^[0-9]+$ ]] || die "FURY_CANARY_TICK_SECONDS must be an unsigned integer"
+    [ "${tick}" -ge 10 ] || die "FURY_CANARY_TICK_SECONDS must be at least 10"
+
+    mkdir -p "$(dirname "${CFG}")"
+    [ -f "${CFG}" ] || touch "${CFG}"
+
+    local tmp
+    tmp="$(mktemp)"
+
+    awk '
+        /^-- BEGIN FURY MARKET CANARY$/ { skip=1; next }
+        /^-- END FURY MARKET CANARY$/   { skip=0; next }
+        !skip { print }
+    ' "${CFG}" > "${tmp}"
+
+    cat >> "${tmp}" <<EOF
+
+-- BEGIN FURY MARKET CANARY
+Fury = Fury or {}
+Fury.Economy = Fury.Economy or {}
+Fury.Economy.ObserveVendorMarket = 1
+Fury.Economy.DryRun = 0
+Fury.Economy.ExecutePurchases = 1
+Fury.Economy.PersistDemand = 1
+Fury.Economy.CanaryOnly = 1
+Fury.Economy.CanaryListingId = "${listing}"
+Fury.Economy.CanaryOwnerId = "${owner}"
+Fury.Economy.FailureInjectionStage = ${stage}
+Fury.Economy.DemandRecoveryPerTick = 0.0
+Fury.Economy.MaxPurchasesPerTick = 1
+Fury.Economy.TickSeconds = ${tick}
+-- END FURY MARKET CANARY
+EOF
+
+    mv "${tmp}" "${CFG}"
+}
+
+ensure_tre() {
+    [ -d /tre ] || die "/tre is not mounted"
+
+    if ! find /tre -type f -print -quit 2>/dev/null | grep -q .; then
+        die "/tre is mounted but contains no game data"
+    fi
+}
+
+ensure_mariadb() {
+    if mysqladmin ping --silent >/dev/null 2>&1; then
+        return
+    fi
+
+    if [ "$(id -u)" -eq 0 ]; then
+        /etc/init.d/mariadb start
+    else
+        sudo /etc/init.d/mariadb start
+    fi
+
+    mysqladmin ping --silent >/dev/null 2>&1 ||
+        die "MariaDB did not start"
+}
+
+ensure_build() {
+    local force="$1"
+    local core3="${BIN_DIR}/core3"
+
+    [ -d "${REPO_DIR}/.git" ] || die "Core3 repository not found at ${REPO_DIR}"
+
+    local sha
+    sha="$(git -C "${REPO_DIR}" rev-parse HEAD)"
+
+    local stamped=""
+    if [ -f "${BUILD_STAMP}" ]; then
+        stamped="$(cat "${BUILD_STAMP}")"
+    fi
+
+    if [ "${force}" = "1" ] || [ ! -x "${core3}" ] || [ "${sha}" != "${stamped}" ]; then
+        echo "FURY canary: building Core3 at ${sha}"
+        (
+            cd "${REPO_DIR}"
+            "${HOME_DIR}/bin/build"
+        )
+        printf '%s\n' "${sha}" > "${BUILD_STAMP}"
+    fi
+
+    [ -x "${core3}" ] || die "Core3 binary missing after build"
+}
+
+run_crash_stage() {
+    local stage="$1"
+    local logfile="${BIN_DIR}/fury-canary-stage-${stage}.log"
+    local timeout_seconds="${FURY_CANARY_TIMEOUT_SECONDS:-300}"
+
+    [[ "${timeout_seconds}" =~ ^[0-9]+$ ]] ||
+        die "FURY_CANARY_TIMEOUT_SECONDS must be an unsigned integer"
+
+    echo "FURY canary: running crash stage ${stage}; log=${logfile}"
+
+    set +e
+    (
+        cd "${BIN_DIR}"
+        timeout --signal=TERM "${timeout_seconds}" ./core3
+    ) 2>&1 | tee "${logfile}"
+    local rc="${PIPESTATUS[0]}"
+    set -e
+
+    if [ "${rc}" -eq 124 ]; then
+        die "stage ${stage} timed out before failure injection fired"
+    fi
+
+    if [ "${rc}" -eq 0 ]; then
+        die "stage ${stage} exited cleanly; expected intentional abort"
+    fi
+
+    if [ "${stage}" -eq 6 ]; then
+        grep -F "post-commit failure injection stage 6" "${logfile}" >/dev/null ||
+            die "stage 6 aborted, but expected post-commit marker was not logged"
+    else
+        grep -F "failure injection stage ${stage}" "${logfile}" >/dev/null ||
+            die "stage ${stage} aborted, but expected pre-commit marker was not logged"
+    fi
+
+    echo "FURY canary: stage ${stage} reached its expected intentional crash"
+}
+
+run_success_stage() {
+    local logfile="${BIN_DIR}/fury-canary-stage-0.log"
+
+    echo "FURY canary: running normal stage 0 in foreground; log=${logfile}"
+    (
+        cd "${BIN_DIR}"
+        ./core3
+    ) 2>&1 | tee "${logfile}"
+}
+
+[ "$#" -ge 3 ] || { usage; exit 2; }
+
+stage="$1"
+listing="$2"
+owner="$3"
+shift 3
+
+config_only=0
+rebuild=0
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --config-only) config_only=1 ;;
+        --rebuild) rebuild=1 ;;
+        -h|--help) usage; exit 0 ;;
+        *) die "unknown option: $1" ;;
+    esac
+    shift
+done
+
+[[ "${stage}" =~ ^[0-6]$ ]] || die "stage must be 0..6"
+valid_u64 "${listing}" || die "invalid listing OID: ${listing}"
+valid_u64 "${owner}" || die "invalid seller OID: ${owner}"
+[ "${listing}" != "0" ] || die "listing OID must be non-zero"
+[ "${owner}" != "0" ] || die "seller OID must be non-zero"
+
+write_canary_block "${stage}" "${listing}" "${owner}"
+
+echo "FURY canary config:"
+echo "  stage=${stage}"
+echo "  listing=${listing}"
+echo "  seller=${owner}"
+echo "  config=${CFG}"
+
+if [ "${config_only}" -eq 1 ]; then
+    exit 0
+fi
+
+[ "$(pgrep -x core3 2>/dev/null || true)" = "" ] ||
+    die "core3 is already running"
+
+ensure_tre
+ensure_mariadb
+ensure_build "${rebuild}"
+
+if [ "${stage}" -eq 0 ]; then
+    run_success_stage
+else
+    run_crash_stage "${stage}"
+fi
