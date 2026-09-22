@@ -21,6 +21,9 @@ struct FuryMarketListing {
 	bool factoryCrate = false;
 	bool onBazaar = false;
 
+	bool demandKnown = false;
+	float demand = 0.0f;
+
 	bool qualitySignalKnown = false;
 	float qualitySignal = 0.0f;
 };

@@ -160,3 +160,27 @@ TEST(FuryMarketDryRunTest, FactoryCrateNormalizationUsesCeilingDivision) {
 	EXPECT_EQ(result.decisions[0].comparisonPrice, 334);
 	EXPECT_EQ(result.decisions[0].referencePrice, 334);
 }
+
+TEST(FuryMarketDryRunTest, ListingSpecificDemandOverridesDefaultDemand) {
+	std::vector<FuryMarketListing> listings;
+
+	FuryMarketListing lowDemand;
+	lowDemand.listingId = 700;
+	lowDemand.comparisonKey = 9999;
+	lowDemand.askingPrice = 1000;
+	lowDemand.demandKnown = true;
+	lowDemand.demand = 0.1f;
+	listings.push_back(lowDemand);
+
+	FuryMarketListing highDemand = lowDemand;
+	highDemand.listingId = 701;
+	highDemand.demand = 0.9f;
+	listings.push_back(highDemand);
+
+	auto result = FuryMarketDryRun::evaluate(listings, 0.5f, 0.60f);
+
+	ASSERT_EQ(result.decisions.size(), 2u);
+	EXPECT_NEAR(result.decisions[0].decision.demandScore, 0.1f, 0.0001f);
+	EXPECT_NEAR(result.decisions[1].decision.demandScore, 0.9f, 0.0001f);
+	EXPECT_GT(result.decisions[1].decision.score, result.decisions[0].decision.score);
+}

@@ -365,6 +365,19 @@ void AuctionManagerImplementation::runFuryMarketTick() {
 		auto listings = FuryMarketObserver::collectListings(&items, zoneServer);
 		const float defaultDemand = ConfigManager::instance()->getFloat("Fury.Economy.DefaultDemand", 0.5f);
 		const float purchaseThreshold = ConfigManager::instance()->getFloat("Fury.Economy.PurchaseThreshold", 0.62f);
+
+		if (furyEconomyState != nullptr) {
+			Locker demandLocker(furyEconomyState);
+
+			for (auto& listing : listings) {
+				StringBuffer key;
+				key << listing.planetCrc << ":" << listing.regionId << ":" << listing.comparisonKey;
+
+				listing.demand = furyEconomyState->getDemand(key.toString(), defaultDemand);
+				listing.demandKnown = true;
+			}
+		}
+
 		auto dryRun = FuryMarketDryRun::evaluate(listings, defaultDemand, purchaseThreshold);
 
 		info(true)
@@ -395,6 +408,7 @@ void AuctionManagerImplementation::runFuryMarketTick() {
 				<< ", comparisonPrice=" << entry.comparisonPrice
 				<< ", referencePrice=" << entry.referencePrice
 				<< ", comparables=" << entry.comparableListings
+				<< ", demand=" << (entry.listing.demandKnown ? entry.listing.demand : defaultDemand)
 				<< ", qualityKnown=" << entry.listing.qualitySignalKnown
 				<< ", qualitySignal=" << entry.listing.qualitySignal
 				<< ", qualityScore=" << entry.decision.qualityScore

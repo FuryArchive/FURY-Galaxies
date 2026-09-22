@@ -110,7 +110,7 @@ FuryMarketDryRunSummary FuryMarketDryRun::evaluate(
 		result.referencePrice = referenceFound->second;
 
 		FuryMarketDecisionInput input;
-		input.demand = defaultDemand;
+		input.demand = listing.demandKnown ? listing.demand : defaultDemand;
 		input.askingPrice = result.comparisonPrice;
 		input.referencePrice = result.referencePrice;
 		input.listingId = listing.listingId;
