@@ -48,42 +48,12 @@
 #include "server/zone/objects/factorycrate/FactoryCrate.h"
 #include "server/zone/objects/transaction/TransactionLog.h"
 
-#include <limits>
 
 namespace {
 String makeFuryDemandKey(uint32 planetCrc, uint64 regionId, uint32 comparisonKey) {
 	StringBuffer key;
 	key << planetCrc << ":" << regionId << ":" << comparisonKey;
 	return key.toString();
-}
-
-bool parseFuryCanaryOid(const String& rawValue, uint64& value) {
-	const String text = rawValue.trim();
-
-	if (text.isEmpty() || text == "0") {
-		value = 0;
-		return true;
-	}
-
-	uint64 parsed = 0;
-	const uint64 maxValue = std::numeric_limits<uint64>::max();
-
-	for (int i = 0; i < text.length(); ++i) {
-		const char ch = text.charAt(i);
-
-		if (ch < '0' || ch > '9')
-			return false;
-
-		const uint64 digit = static_cast<uint64>(ch - '0');
-
-		if (parsed > (maxValue - digit) / 10)
-			return false;
-
-		parsed = (parsed * 10) + digit;
-	}
-
-	value = parsed;
-	return true;
 }
 
 FuryExecutionScope getFuryExecutionScope() {
@@ -96,9 +66,14 @@ FuryExecutionScope getFuryExecutionScope() {
 	const String ownerId =
 		ConfigManager::instance()->getString("Fury.Economy.CanaryOwnerId", "0");
 
+	const String normalizedListingId = listingId.trim();
+	const String normalizedOwnerId = ownerId.trim();
+
 	scope.valid =
-		parseFuryCanaryOid(listingId, scope.listingId) &&
-		parseFuryCanaryOid(ownerId, scope.ownerId);
+		FuryExecutionScopeGuard::parseDecimalOid(
+			normalizedListingId.toCharArray(), scope.listingId) &&
+		FuryExecutionScopeGuard::parseDecimalOid(
+			normalizedOwnerId.toCharArray(), scope.ownerId);
 
 	return scope;
 }

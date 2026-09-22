@@ -4,6 +4,18 @@
 #include "server/zone/managers/fury/economy/FuryExecutionScope.h"
 
 int main() {
+	std::uint64_t parsed = 123;
+
+	assert(FuryExecutionScopeGuard::parseDecimalOid("", parsed));
+	assert(parsed == 0);
+	assert(FuryExecutionScopeGuard::parseDecimalOid("0", parsed));
+	assert(parsed == 0);
+	assert(FuryExecutionScopeGuard::parseDecimalOid("18446744073709551615", parsed));
+	assert(parsed == 18446744073709551615ULL);
+	assert(!FuryExecutionScopeGuard::parseDecimalOid("18446744073709551616", parsed));
+	assert(!FuryExecutionScopeGuard::parseDecimalOid("12x3", parsed));
+	assert(!FuryExecutionScopeGuard::parseDecimalOid("-1", parsed));
+
 	FuryExecutionScope scope;
 
 	scope.valid = false;

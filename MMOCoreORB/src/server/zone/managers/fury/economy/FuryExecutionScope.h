@@ -12,6 +12,8 @@ struct FuryExecutionScope {
 
 class FuryExecutionScopeGuard {
 public:
+	static bool parseDecimalOid(const char* text, std::uint64_t& value);
+
 	static bool allows(
 		const FuryExecutionScope& scope,
 		std::uint64_t candidateListingId,
