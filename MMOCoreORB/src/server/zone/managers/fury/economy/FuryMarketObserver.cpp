@@ -2,6 +2,7 @@
 #include "FuryItemQuality.h"
 #include "server/zone/ZoneServer.h"
 #include "server/zone/objects/region/CityRegion.h"
+#include "server/zone/objects/factorycrate/FactoryCrate.h"
 
 FuryMarketSnapshot FuryMarketObserver::scan(TerminalListVector* items) {
 	FuryMarketSnapshot snapshot;
@@ -99,7 +100,14 @@ std::vector<FuryMarketListing> FuryMarketObserver::collectListings(TerminalListV
 				ManagedReference<SceneObject*> sellingObject =
 					zoneServer->getObject(item->getAuctionedItemObjectID());
 
-				auto quality = FuryItemQualityExtractor::inspect(sellingObject);
+				if (listing.factoryCrate && sellingObject != nullptr && sellingObject->isFactoryCrate()) {
+					ManagedReference<FactoryCrate*> crate = cast<FactoryCrate*>(sellingObject.get());
+
+					if (crate != nullptr && crate->getUseCount() > 0)
+						listing.units = crate->getUseCount();
+				}
+
+				auto quality = FuryItemQualityExtractor::inspect(sellingObject.get());
 
 				listing.qualitySignalKnown = quality.known;
 				listing.qualitySignal = quality.rawSignal;

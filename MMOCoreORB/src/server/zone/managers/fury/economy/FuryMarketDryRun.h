@@ -8,6 +8,7 @@
 
 struct FuryMarketDryRunDecision {
 	FuryMarketListing listing;
+	int comparisonPrice = 0;
 	int referencePrice = 0;
 	int comparableListings = 0;
 	FuryMarketDecision decision;
@@ -23,8 +24,8 @@ struct FuryMarketDryRunSummary {
  * Pure read-only market pass over portable listing snapshots.
  *
  * The first FURY market intentionally ignores auctions and evaluates only
- * fixed-price listings. Reference price is derived from the current average
- * asking price for the listing's effective item type.
+ * fixed-price listings. Reference price is derived from a robust median of comparable per-unit
+ * prices for the exact product template when available.
  */
 class FuryMarketDryRun {
 public:

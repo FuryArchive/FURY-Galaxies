@@ -391,6 +391,8 @@ void AuctionManagerImplementation::runFuryMarketTick() {
 				<< ", planetCrc=" << entry.listing.planetCrc
 				<< ", regionId=" << entry.listing.regionId
 				<< ", price=" << entry.listing.askingPrice
+				<< ", units=" << entry.listing.units
+				<< ", comparisonPrice=" << entry.comparisonPrice
 				<< ", referencePrice=" << entry.referencePrice
 				<< ", comparables=" << entry.comparableListings
 				<< ", qualityKnown=" << entry.listing.qualitySignalKnown

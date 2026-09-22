@@ -10,6 +10,17 @@ std::uint32_t marketComparisonKey(const FuryMarketListing& listing) {
 	return listing.comparisonKey != 0 ? listing.comparisonKey : static_cast<std::uint32_t>(listing.effectiveItemType);
 }
 
+int comparisonPrice(const FuryMarketListing& listing) {
+	int units = listing.units > 0 ? listing.units : 1;
+	const long long gross = listing.askingPrice;
+
+	if (gross <= 0)
+		return 0;
+
+	const long long perUnit = (gross + units - 1) / units;
+	return static_cast<int>(perUnit > 0 ? perUnit : 1);
+}
+
 int medianPrice(std::vector<int>& prices) {
 	if (prices.empty())
 		return 0;
@@ -67,7 +78,7 @@ FuryMarketDryRunSummary FuryMarketDryRun::evaluate(
 		if (listing.auction || listing.askingPrice <= 0)
 			continue;
 
-		pricesByType[marketComparisonKey(listing)].push_back(listing.askingPrice);
+		pricesByType[marketComparisonKey(listing)].push_back(comparisonPrice(listing));
 
 		if (listing.qualitySignalKnown && listing.qualitySignal >= 0.0f)
 			qualityByType[marketComparisonKey(listing)].push_back(listing.qualitySignal);
@@ -95,11 +106,12 @@ FuryMarketDryRunSummary FuryMarketDryRun::evaluate(
 		FuryMarketDryRunDecision result;
 		result.listing = listing;
 		result.comparableListings = static_cast<int>(pricesFound->second.size());
+		result.comparisonPrice = comparisonPrice(listing);
 		result.referencePrice = referenceFound->second;
 
 		FuryMarketDecisionInput input;
 		input.demand = defaultDemand;
-		input.askingPrice = listing.askingPrice;
+		input.askingPrice = result.comparisonPrice;
 		input.referencePrice = result.referencePrice;
 		input.listingId = listing.listingId;
 

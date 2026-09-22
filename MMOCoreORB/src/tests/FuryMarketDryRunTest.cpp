@@ -120,3 +120,43 @@ TEST(FuryMarketDryRunTest, DifferentTemplatesOfSameClientTypeDoNotPollutePrice) 
 	EXPECT_EQ(result.decisions[0].referencePrice, 1000);
 	EXPECT_EQ(result.decisions[1].referencePrice, 10000);
 }
+
+TEST(FuryMarketDryRunTest, FactoryCratePriceIsComparedPerContainedItem) {
+	std::vector<FuryMarketListing> listings;
+
+	FuryMarketListing single;
+	single.listingId = 600;
+	single.comparisonKey = 7777;
+	single.askingPrice = 1000;
+	listings.push_back(single);
+
+	FuryMarketListing crate = single;
+	crate.listingId = 601;
+	crate.factoryCrate = true;
+	crate.units = 25;
+	crate.askingPrice = 25000;
+	listings.push_back(crate);
+
+	auto result = FuryMarketDryRun::evaluate(listings, 0.5f, 0.60f);
+
+	ASSERT_EQ(result.decisions.size(), 2u);
+	EXPECT_EQ(result.decisions[0].comparisonPrice, 1000);
+	EXPECT_EQ(result.decisions[1].comparisonPrice, 1000);
+	EXPECT_EQ(result.decisions[0].referencePrice, 1000);
+	EXPECT_EQ(result.decisions[1].referencePrice, 1000);
+}
+
+TEST(FuryMarketDryRunTest, FactoryCrateNormalizationUsesCeilingDivision) {
+	FuryMarketListing crate;
+	crate.listingId = 610;
+	crate.comparisonKey = 8888;
+	crate.factoryCrate = true;
+	crate.units = 3;
+	crate.askingPrice = 1000;
+
+	auto result = FuryMarketDryRun::evaluate({crate}, 0.5f, 0.60f);
+
+	ASSERT_EQ(result.decisions.size(), 1u);
+	EXPECT_EQ(result.decisions[0].comparisonPrice, 334);
+	EXPECT_EQ(result.decisions[0].referencePrice, 334);
+}

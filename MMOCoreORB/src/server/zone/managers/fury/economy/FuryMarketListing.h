@@ -15,6 +15,7 @@ struct FuryMarketListing {
 	std::uint32_t comparisonKey = 0;
 	int askingPrice = 0;
 	int size = 1;
+	int units = 1;
 
 	bool auction = false;
 	bool factoryCrate = false;
