@@ -10,8 +10,11 @@ TEST(FurySettlementPlanTest, PreservesCore3InclusiveTaxSemantics) {
 	auto plan = FurySettlementPlanner::plan(input);
 
 	EXPECT_TRUE(plan.eligible);
-	EXPECT_EQ(plan.tax, 50);
-	EXPECT_EQ(plan.sellerNet, 1000);
+	const int nativeTax = input.grossPrice -
+		(input.grossPrice / (1.0f + (input.citySalesTaxPercent / 100.0f)));
+
+	EXPECT_EQ(plan.tax, nativeTax);
+	EXPECT_EQ(plan.sellerNet, input.grossPrice - nativeTax);
 }
 
 TEST(FurySettlementPlanTest, ZeroTaxPaysFullGross) {

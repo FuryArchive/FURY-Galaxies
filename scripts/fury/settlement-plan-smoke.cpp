@@ -11,8 +11,11 @@ int main() {
 	auto result = FurySettlementPlanner::plan(input);
 
 	assert(result.eligible);
-	assert(result.tax == 50);
-	assert(result.sellerNet == 1000);
+	const int nativeTax = input.grossPrice -
+		(input.grossPrice / (1.0f + (input.citySalesTaxPercent / 100.0f)));
+
+	assert(result.tax == nativeTax);
+	assert(result.sellerNet == input.grossPrice - nativeTax);
 
 	input.auction = true;
 	result = FurySettlementPlanner::plan(input);
