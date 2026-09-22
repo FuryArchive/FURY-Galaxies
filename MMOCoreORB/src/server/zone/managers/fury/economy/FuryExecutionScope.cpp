@@ -40,11 +40,12 @@ bool FuryExecutionScopeGuard::allows(
 	if (!scope.canaryOnly)
 		return true;
 
-	// Canary mode is deliberately fail-closed.
-	if (scope.listingId == 0 && scope.ownerId == 0)
+	// Canary mode is deliberately one-listing-only. Owner ID is an optional
+	// second factor, never a substitute for the exact listing selector.
+	if (scope.listingId == 0)
 		return false;
 
-	if (scope.listingId != 0 && candidateListingId != scope.listingId)
+	if (candidateListingId != scope.listingId)
 		return false;
 
 	if (scope.ownerId != 0 && candidateOwnerId != scope.ownerId)

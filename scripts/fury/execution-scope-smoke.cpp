@@ -35,7 +35,7 @@ int main() {
 	assert(!FuryExecutionScopeGuard::allows(scope, 123, 457));
 
 	scope.listingId = 0;
-	assert(FuryExecutionScopeGuard::allows(scope, 999, 456));
+	assert(!FuryExecutionScopeGuard::allows(scope, 999, 456));
 	assert(!FuryExecutionScopeGuard::allows(scope, 999, 457));
 
 	scope.canaryOnly = false;

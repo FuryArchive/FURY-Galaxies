@@ -9,11 +9,11 @@ Defaults:
 - `CanaryOwnerId = "0"`
 
 With those defaults, even if `ExecutePurchases=1`, no settlement task is
-scheduled. Canary mode requires at least one explicit selector.
+scheduled. Canary mode requires an exact non-zero listing selector.
 
-For a controlled runtime test, set an exact auctioned-item/listing OID and/or
-seller OID. The values are strings so full 64-bit Core3 object IDs are
-preserved. If both selectors are non-zero, both must match.
+For a controlled runtime test, set an exact auctioned-item/listing OID.
+`CanaryOwnerId` is optional and acts only as a second-factor owner check.
+The values are strings so full 64-bit Core3 object IDs are preserved.
 
 The gate is enforced twice: before scheduling and again inside
 `settleFuryMarketListing()`. This prevents an accidentally queued or directly

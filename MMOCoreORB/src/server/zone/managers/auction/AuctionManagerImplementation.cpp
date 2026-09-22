@@ -513,9 +513,8 @@ void AuctionManagerImplementation::runFuryMarketTick() {
 				if (!executionScope.valid) {
 					warning("FURY economy: execution suppressed; invalid CanaryListingId/CanaryOwnerId");
 				} else if (executionScope.canaryOnly &&
-					executionScope.listingId == 0 &&
-					executionScope.ownerId == 0) {
-					warning("FURY economy: execution suppressed; CanaryOnly=1 requires CanaryListingId or CanaryOwnerId");
+					executionScope.listingId == 0) {
+					warning("FURY economy: execution suppressed; CanaryOnly=1 requires an exact CanaryListingId");
 				}
 
 				for (const auto& entry : evaluation.decisions) {
