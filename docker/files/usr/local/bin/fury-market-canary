@@ -11,12 +11,13 @@ MAX_U64=18446744073709551615
 usage() {
     cat <<'EOF'
 Usage:
-  fury-market-canary <stage 0..6> <listing-oid> <seller-oid> [--config-only] [--rebuild]
+  fury-market-canary <stage 0..6> <listing-oid> <seller-oid> [--restore NAME] [--config-only] [--rebuild]
 
 Stages 1..6 run core3 directly and expect the configured failure injection to
 abort the process. Stage 0 is the normal-success canary and runs in foreground.
 
 Options:
+  --restore NAME restore a saved FURY baseline before configuring/running
   --config-only  update the FURY canary config block and exit
   --rebuild      force a local Core3 rebuild before running
 EOF
@@ -196,13 +197,28 @@ shift 3
 
 config_only=0
 rebuild=0
+restore_name=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --config-only) config_only=1 ;;
-        --rebuild) rebuild=1 ;;
-        -h|--help) usage; exit 0 ;;
-        *) die "unknown option: $1" ;;
+        --config-only)
+            config_only=1
+            ;;
+        --rebuild)
+            rebuild=1
+            ;;
+        --restore)
+            [ "$#" -ge 2 ] || die "--restore requires a snapshot name"
+            restore_name="$2"
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            die "unknown option: $1"
+            ;;
     esac
     shift
 done
@@ -212,6 +228,17 @@ valid_u64 "${listing}" || die "invalid listing OID: ${listing}"
 valid_u64 "${owner}" || die "invalid seller OID: ${owner}"
 [ "${listing}" != "0" ] || die "listing OID must be non-zero"
 [ "${owner}" != "0" ] || die "seller OID must be non-zero"
+
+if [ -n "${restore_name}" ]; then
+    [ "${config_only}" -eq 0 ] || die "--restore cannot be combined with --config-only"
+
+    [ "$(pgrep -x core3 2>/dev/null || true)" = "" ] ||
+        die "core3 is already running"
+
+    snapshot_bin="${FURY_MARKET_SNAPSHOT_BIN:-/usr/local/bin/fury-market-snapshot}"
+    [ -x "${snapshot_bin}" ] || die "snapshot helper not found: ${snapshot_bin}"
+    "${snapshot_bin}" restore "${restore_name}"
+fi
 
 write_canary_block "${stage}" "${listing}" "${owner}"
 

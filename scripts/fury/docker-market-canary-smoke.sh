@@ -42,4 +42,9 @@ if "${runner}" 7 1 1 --config-only; then
     exit 1
 fi
 
+if "${runner}" 2 123 456 --restore baseline --config-only; then
+    echo "--restore with --config-only unexpectedly accepted" >&2
+    exit 1
+fi
+
 echo "FURY market canary runner smoke OK"

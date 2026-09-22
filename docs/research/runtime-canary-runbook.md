@@ -42,6 +42,30 @@ Fury.Economy.DemandRecoveryPerTick = 0.0 -- isolate purchase-impact durability
 
 Leave all normal gross-price and category safety gates enabled.
 
+## Reusable baseline snapshot
+
+With Core3 stopped after creating the deterministic test listing, save one
+baseline:
+
+```bash
+fury-market-snapshot save baseline
+```
+
+The snapshot contains both the MariaDB application database and the complete
+Berkeley `MMOCoreORB/bin/databases` directory. Both stores are required for a
+repeatable crash/restart proof.
+
+Each crash stage can then restore that baseline automatically:
+
+```bash
+fury-market-canary 1 <listing-oid> <seller-oid> --restore baseline
+fury-market-canary 2 <listing-oid> <seller-oid> --restore baseline
+# ... through stage 6
+```
+
+Use `fury-market-snapshot list` to inspect saved baselines. Saving/restoring
+fails closed while a `core3` process is running.
+
 ## Docker one-command runner
 
 Inside the FURY Docker runtime, use:

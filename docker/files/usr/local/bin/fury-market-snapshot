@@ -1,0 +1,221 @@
+#!/bin/bash
+set -eo pipefail
+
+HOME_DIR="${HOME_DIR:-/home/swgemu}"
+REPO_DIR="${FURY_CORE3_REPO:-${HOME_DIR}/workspace/Core3}"
+BIN_DIR="${REPO_DIR}/MMOCoreORB/bin"
+DB_DIR="${BIN_DIR}/databases"
+SNAPSHOT_ROOT="${FURY_CANARY_SNAPSHOT_ROOT:-${HOME_DIR}/fury-canary-snapshots}"
+MY_CNF="${HOME_DIR}/.my.cnf"
+
+if [ -f "${HOME_DIR}/.env" ]; then
+    source "${HOME_DIR}/.env"
+fi
+
+DBNAME="${DBNAME:-swgemu}"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  fury-market-snapshot save <name> [--force]
+  fury-market-snapshot restore <name>
+  fury-market-snapshot list
+
+A snapshot contains the application MariaDB database plus the complete Core3
+Berkeley database directory. Core3 must be stopped for save/restore.
+EOF
+}
+
+die() {
+    echo "FURY SNAPSHOT ERROR: $*" >&2
+    exit 2
+}
+
+valid_name() {
+    [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]]
+}
+
+ensure_core3_stopped() {
+    if pgrep -x core3 >/dev/null 2>&1; then
+        die "core3 is running; stop it before snapshot save/restore"
+    fi
+}
+
+ensure_mariadb() {
+    local defaults=()
+    if [ -f "${MY_CNF}" ]; then
+        defaults=(--defaults-extra-file="${MY_CNF}")
+    fi
+
+    if mysqladmin "${defaults[@]}" ping --silent >/dev/null 2>&1; then
+        return
+    fi
+
+    if [ "$(id -u)" -eq 0 ]; then
+        /etc/init.d/mariadb start
+    else
+        sudo /etc/init.d/mariadb start
+    fi
+
+    mysqladmin "${defaults[@]}" ping --silent >/dev/null 2>&1 ||
+        die "MariaDB did not start"
+}
+
+mysql_defaults() {
+    if [ -f "${MY_CNF}" ]; then
+        printf '%s\n' "--defaults-extra-file=${MY_CNF}"
+    fi
+}
+
+save_snapshot() {
+    local name="$1"
+    local force="$2"
+    local destination="${SNAPSHOT_ROOT}/${name}"
+
+    ensure_core3_stopped
+    ensure_mariadb
+
+    [ -d "${DB_DIR}" ] || die "Berkeley database directory missing: ${DB_DIR}"
+
+    if [ -e "${destination}" ] && [ "${force}" != "1" ]; then
+        die "snapshot already exists: ${name} (use --force to replace)"
+    fi
+
+    mkdir -p "${SNAPSHOT_ROOT}"
+
+    local tmp="${SNAPSHOT_ROOT}/.${name}.tmp.$$"
+    rm -rf "${tmp}"
+    mkdir -p "${tmp}"
+    trap "rm -rf '${tmp}'" EXIT
+
+    local defaults
+    defaults="$(mysql_defaults)"
+
+    echo "FURY snapshot: dumping MariaDB database ${DBNAME}"
+    if [ -n "${defaults}" ]; then
+        mysqldump "${defaults}" --single-transaction --quick --routines --triggers --events             --add-drop-database --databases "${DBNAME}" | gzip -1 > "${tmp}/mysql.sql.gz"
+    else
+        mysqldump --single-transaction --quick --routines --triggers --events             --add-drop-database --databases "${DBNAME}" | gzip -1 > "${tmp}/mysql.sql.gz"
+    fi
+
+    echo "FURY snapshot: archiving Berkeley databases"
+    tar -C "${BIN_DIR}" -czf "${tmp}/berkeley.tar.gz" databases
+
+    local sha="unknown"
+    if [ -d "${REPO_DIR}/.git" ]; then
+        sha="$(git -C "${REPO_DIR}" rev-parse HEAD)"
+    fi
+
+    {
+        echo "name=${name}"
+        echo "created_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "core3_sha=${sha}"
+        echo "database=${DBNAME}"
+    } > "${tmp}/metadata.txt"
+
+    gzip -t "${tmp}/mysql.sql.gz"
+    tar -tzf "${tmp}/berkeley.tar.gz" >/dev/null
+
+    rm -rf "${destination}"
+    mv "${tmp}" "${destination}"
+    trap - EXIT
+
+    echo "FURY snapshot saved: ${destination}"
+}
+
+restore_snapshot() {
+    local name="$1"
+    local source="${SNAPSHOT_ROOT}/${name}"
+
+    ensure_core3_stopped
+    [ -d "${source}" ] || die "snapshot not found: ${name}"
+    [ -f "${source}/mysql.sql.gz" ] || die "snapshot missing mysql.sql.gz"
+    [ -f "${source}/berkeley.tar.gz" ] || die "snapshot missing berkeley.tar.gz"
+
+    gzip -t "${source}/mysql.sql.gz"
+    tar -tzf "${source}/berkeley.tar.gz" >/dev/null
+
+    ensure_mariadb
+    mkdir -p "${BIN_DIR}"
+
+    local stage="${BIN_DIR}/.fury-restore-${name}-$$"
+    local old="${BIN_DIR}/.fury-old-databases-$$"
+    rm -rf "${stage}" "${old}"
+    mkdir -p "${stage}"
+    tar -C "${stage}" -xzf "${source}/berkeley.tar.gz"
+    [ -d "${stage}/databases" ] || die "snapshot archive does not contain databases/"
+
+    if [ -d "${DB_DIR}" ]; then
+        mv "${DB_DIR}" "${old}"
+    fi
+
+    if ! mv "${stage}/databases" "${DB_DIR}"; then
+        [ ! -d "${old}" ] || mv "${old}" "${DB_DIR}"
+        rm -rf "${stage}"
+        die "failed to install Berkeley snapshot"
+    fi
+    rm -rf "${stage}"
+
+    local defaults
+    defaults="$(mysql_defaults)"
+
+    echo "FURY snapshot: restoring MariaDB database ${DBNAME}"
+    set +e
+    if [ -n "${defaults}" ]; then
+        gzip -dc "${source}/mysql.sql.gz" | mysql "${defaults}"
+    else
+        gzip -dc "${source}/mysql.sql.gz" | mysql
+    fi
+    local mysql_rc="${PIPESTATUS[1]}"
+    set -e
+
+    if [ "${mysql_rc}" -ne 0 ]; then
+        rm -rf "${DB_DIR}"
+        [ ! -d "${old}" ] || mv "${old}" "${DB_DIR}"
+        die "MariaDB restore failed; Berkeley directory reverted"
+    fi
+
+    rm -rf "${old}"
+    echo "FURY snapshot restored: ${name}"
+}
+
+list_snapshots() {
+    if [ ! -d "${SNAPSHOT_ROOT}" ]; then
+        exit 0
+    fi
+
+    find "${SNAPSHOT_ROOT}" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
+}
+
+command="${1:-}"
+case "${command}" in
+    save)
+        [ "$#" -ge 2 ] || { usage; exit 2; }
+        name="$2"
+        valid_name "${name}" || die "invalid snapshot name: ${name}"
+        force=0
+        if [ "${3:-}" = "--force" ]; then
+            force=1
+        elif [ "$#" -gt 2 ]; then
+            die "unknown option: ${3}"
+        fi
+        save_snapshot "${name}" "${force}"
+        ;;
+    restore)
+        [ "$#" -eq 2 ] || { usage; exit 2; }
+        name="$2"
+        valid_name "${name}" || die "invalid snapshot name: ${name}"
+        restore_snapshot "${name}"
+        ;;
+    list)
+        [ "$#" -eq 1 ] || { usage; exit 2; }
+        list_snapshots
+        ;;
+    -h|--help)
+        usage
+        ;;
+    *)
+        usage
+        exit 2
+        ;;
+esac
