@@ -37,6 +37,7 @@ core3_init_env() {
     export STATUSPORT=${STATUSPORT:-'44455'}
     export TREPATH=${TREPATH:-"/swgemu/core3/run/tre"}
     export ZONESERVERPORT=${ZONESERVERPORT:-'44463'}
+    export REPO_PUBLIC_NAME=${REPO_PUBLIC_NAME:-'Core3'}
 }
 
 core3_init_home() {
@@ -70,7 +71,7 @@ core3_clone() {
     msg "Setup Core3 source code.."
     mkdir -vp ${HOME_DIR}/workspace
     cd ${HOME_DIR}/workspace
-    git clone --progress ${REPO_PUBLIC_URL}/Core3.git
+    git clone --progress "${REPO_PUBLIC_URL}/${REPO_PUBLIC_NAME}.git" Core3
     cd Core3
     echo 'MMOCoreORB/bin/scripts/managers/resource_manager_spawns.lua' >> .git/info/exclude
     git update-index --assume-unchanged MMOCoreORB/bin/scripts/managers/resource_manager_spawns.lua

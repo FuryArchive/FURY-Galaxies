@@ -129,8 +129,9 @@ ENV STATUSPORT=${PORT_GROUP}455 \
     DBUSER=swgemu \
     ADMIN_USER=admin \
     REPOS='Core3' \
-    REPO_PUBLIC_URL=https://github.com/swgemu \
-    REPO_PUBLIC_BRANCH='unstable'
+    REPO_PUBLIC_URL=https://github.com/FuryArchive \
+    REPO_PUBLIC_NAME=FURY-Galaxies \
+    REPO_PUBLIC_BRANCH='fury-dev'
 
 ENV PATH=${HOME_DIR}/bin:/usr/local/bin:${PATH}
 
