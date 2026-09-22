@@ -1,12 +1,24 @@
 #include "FuryMarketDryRun.h"
 
+#include <algorithm>
 #include <unordered_map>
+#include <vector>
 
 namespace {
-struct PriceAccumulator {
-	long long total = 0;
-	int count = 0;
-};
+int medianPrice(std::vector<int>& prices) {
+	if (prices.empty())
+		return 0;
+
+	std::sort(prices.begin(), prices.end());
+	const std::size_t middle = prices.size() / 2;
+
+	if ((prices.size() % 2) == 1)
+		return prices[middle];
+
+	const long long left = prices[middle - 1];
+	const long long right = prices[middle];
+	return static_cast<int>((left + right) / 2);
+}
 }
 
 FuryMarketDryRunSummary FuryMarketDryRun::evaluate(
@@ -15,30 +27,34 @@ FuryMarketDryRunSummary FuryMarketDryRun::evaluate(
 	float purchaseThreshold) {
 
 	FuryMarketDryRunSummary summary;
-	std::unordered_map<int, PriceAccumulator> prices;
+	std::unordered_map<int, std::vector<int>> pricesByType;
 
 	for (const auto& listing : listings) {
 		if (listing.auction || listing.askingPrice <= 0)
 			continue;
 
-		auto& accumulator = prices[listing.effectiveItemType];
-		accumulator.total += listing.askingPrice;
-		accumulator.count++;
+		pricesByType[listing.effectiveItemType].push_back(listing.askingPrice);
 	}
 
+	std::unordered_map<int, int> referencePriceByType;
+
+	for (auto& entry : pricesByType)
+		referencePriceByType[entry.first] = medianPrice(entry.second);
+
 	for (const auto& listing : listings) {
 		if (listing.auction || listing.askingPrice <= 0)
 			continue;
 
-		const auto found = prices.find(listing.effectiveItemType);
+		const auto pricesFound = pricesByType.find(listing.effectiveItemType);
+		const auto referenceFound = referencePriceByType.find(listing.effectiveItemType);
 
-		if (found == prices.end() || found->second.count <= 0)
+		if (pricesFound == pricesByType.end() || referenceFound == referencePriceByType.end())
 			continue;
 
 		FuryMarketDryRunDecision result;
 		result.listing = listing;
-		result.comparableListings = found->second.count;
-		result.referencePrice = static_cast<int>(found->second.total / found->second.count);
+		result.comparableListings = static_cast<int>(pricesFound->second.size());
+		result.referencePrice = referenceFound->second;
 
 		FuryMarketDecisionInput input;
 		input.demand = defaultDemand;
