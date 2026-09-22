@@ -8,6 +8,7 @@ int main() {
 	FuryMarketDecisionInput strong;
 	strong.demand = 0.9f;
 	strong.quality = 0.7f;
+	strong.qualityKnown = true;
 	strong.askingPrice = 1000;
 	strong.referencePrice = 1000;
 	strong.listingId = 42;
@@ -18,6 +19,7 @@ int main() {
 	FuryMarketDecisionInput bad;
 	bad.demand = 0.1f;
 	bad.quality = 0.5f;
+	bad.qualityKnown = true;
 	bad.askingPrice = 5000;
 	bad.referencePrice = 1000;
 	bad.listingId = 42;
