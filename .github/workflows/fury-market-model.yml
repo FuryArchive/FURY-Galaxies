@@ -77,3 +77,14 @@ jobs:
 
       - name: Run settlement planner smoke
         run: /tmp/fury-settlement-plan-smoke
+
+      - name: Compile settlement safety
+        run: |
+          g++ -std=c++14 -Wall -Wextra -Werror \
+            -I MMOCoreORB/src \
+            scripts/fury/settlement-safety-smoke.cpp \
+            MMOCoreORB/src/server/zone/managers/fury/economy/FurySettlementSafety.cpp \
+            -o /tmp/fury-settlement-safety-smoke
+
+      - name: Run settlement safety smoke
+        run: /tmp/fury-settlement-safety-smoke
