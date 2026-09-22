@@ -19,6 +19,34 @@ int medianPrice(std::vector<int>& prices) {
 	const long long right = prices[middle];
 	return static_cast<int>((left + right) / 2);
 }
+
+float medianSignal(std::vector<float>& signals) {
+	if (signals.empty())
+		return 0.0f;
+
+	std::sort(signals.begin(), signals.end());
+	const std::size_t middle = signals.size() / 2;
+
+	if ((signals.size() % 2) == 1)
+		return signals[middle];
+
+	return (signals[middle - 1] + signals[middle]) * 0.5f;
+}
+
+float relativeQuality(float signal, float referenceSignal) {
+	if (signal < 0.0f || referenceSignal <= 0.0f)
+		return 0.0f;
+
+	float normalized = signal / (referenceSignal * 2.0f);
+
+	if (normalized < 0.0f)
+		return 0.0f;
+
+	if (normalized > 1.0f)
+		return 1.0f;
+
+	return normalized;
+}
 }
 
 FuryMarketDryRunSummary FuryMarketDryRun::evaluate(
@@ -28,18 +56,26 @@ FuryMarketDryRunSummary FuryMarketDryRun::evaluate(
 
 	FuryMarketDryRunSummary summary;
 	std::unordered_map<int, std::vector<int>> pricesByType;
+	std::unordered_map<int, std::vector<float>> qualityByType;
 
 	for (const auto& listing : listings) {
 		if (listing.auction || listing.askingPrice <= 0)
 			continue;
 
 		pricesByType[listing.effectiveItemType].push_back(listing.askingPrice);
+
+		if (listing.qualitySignalKnown && listing.qualitySignal >= 0.0f)
+			qualityByType[listing.effectiveItemType].push_back(listing.qualitySignal);
 	}
 
 	std::unordered_map<int, int> referencePriceByType;
+	std::unordered_map<int, float> referenceQualityByType;
 
 	for (auto& entry : pricesByType)
 		referencePriceByType[entry.first] = medianPrice(entry.second);
+
+	for (auto& entry : qualityByType)
+		referenceQualityByType[entry.first] = medianSignal(entry.second);
 
 	for (const auto& listing : listings) {
 		if (listing.auction || listing.askingPrice <= 0)
@@ -58,10 +94,18 @@ FuryMarketDryRunSummary FuryMarketDryRun::evaluate(
 
 		FuryMarketDecisionInput input;
 		input.demand = defaultDemand;
-		input.qualityKnown = false;
 		input.askingPrice = listing.askingPrice;
 		input.referencePrice = result.referencePrice;
 		input.listingId = listing.listingId;
+
+		const auto qualityReference = referenceQualityByType.find(listing.effectiveItemType);
+
+		if (listing.qualitySignalKnown &&
+			qualityReference != referenceQualityByType.end() &&
+			qualityReference->second > 0.0f) {
+			input.qualityKnown = true;
+			input.quality = relativeQuality(listing.qualitySignal, qualityReference->second);
+		}
 
 		result.decision = FuryMarketModel::evaluate(input, purchaseThreshold);
 

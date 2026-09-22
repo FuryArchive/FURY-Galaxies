@@ -16,6 +16,9 @@ struct FuryMarketListing {
 	bool auction = false;
 	bool factoryCrate = false;
 	bool onBazaar = false;
+
+	bool qualitySignalKnown = false;
+	float qualitySignal = 0.0f;
 };
 
 #endif // FURYMARKETLISTING_H_

@@ -1,4 +1,6 @@
 #include "FuryMarketObserver.h"
+#include "FuryItemQuality.h"
+#include "server/zone/ZoneServer.h"
 
 FuryMarketSnapshot FuryMarketObserver::scan(TerminalListVector* items) {
 	FuryMarketSnapshot snapshot;
@@ -45,7 +47,7 @@ FuryMarketSnapshot FuryMarketObserver::scan(TerminalListVector* items) {
 }
 
 
-std::vector<FuryMarketListing> FuryMarketObserver::collectListings(TerminalListVector* items) {
+std::vector<FuryMarketListing> FuryMarketObserver::collectListings(TerminalListVector* items, ZoneServer* zoneServer) {
 	std::vector<FuryMarketListing> listings;
 
 	if (items == nullptr)
@@ -79,6 +81,16 @@ std::vector<FuryMarketListing> FuryMarketObserver::collectListings(TerminalListV
 			listing.auction = item->isAuction();
 			listing.factoryCrate = item->isFactoryCrate();
 			listing.onBazaar = item->isOnBazaar();
+
+			if (zoneServer != nullptr) {
+				ManagedReference<SceneObject*> sellingObject =
+					zoneServer->getObject(item->getAuctionedItemObjectID());
+
+				auto quality = FuryItemQualityExtractor::inspect(sellingObject);
+
+				listing.qualitySignalKnown = quality.known;
+				listing.qualitySignal = quality.rawSignal;
+			}
 
 			listings.push_back(listing);
 		}

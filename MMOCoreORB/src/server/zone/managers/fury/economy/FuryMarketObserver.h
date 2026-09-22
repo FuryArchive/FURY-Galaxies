@@ -6,6 +6,8 @@
 #include "FuryMarketListing.h"
 #include <vector>
 
+class ZoneServer;
+
 struct FuryMarketSnapshot {
 	int terminalCount = 0;
 	int activeListings = 0;
@@ -30,7 +32,7 @@ struct FuryMarketSnapshot {
 class FuryMarketObserver {
 public:
 	static FuryMarketSnapshot scan(TerminalListVector* items);
-	static std::vector<FuryMarketListing> collectListings(TerminalListVector* items);
+	static std::vector<FuryMarketListing> collectListings(TerminalListVector* items, ZoneServer* zoneServer = nullptr);
 };
 
 #endif // FURYMARKETOBSERVER_H_

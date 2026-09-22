@@ -72,3 +72,28 @@ TEST(FuryMarketDryRunTest, MedianPriceResistsSingleExtremeListing) {
 	EXPECT_EQ(result.decisions[1].referencePrice, 1000);
 	EXPECT_EQ(result.decisions[2].referencePrice, 1000);
 }
+
+TEST(FuryMarketDryRunTest, RealQualitySignalAffectsSameTypeRanking) {
+	std::vector<FuryMarketListing> listings;
+
+	FuryMarketListing ordinary;
+	ordinary.listingId = 400;
+	ordinary.effectiveItemType = 900;
+	ordinary.askingPrice = 1000;
+	ordinary.qualitySignalKnown = true;
+	ordinary.qualitySignal = 100.0f;
+	listings.push_back(ordinary);
+
+	FuryMarketListing exceptional = ordinary;
+	exceptional.listingId = 401;
+	exceptional.qualitySignal = 200.0f;
+	listings.push_back(exceptional);
+
+	auto result = FuryMarketDryRun::evaluate(listings, 0.5f, 0.60f);
+
+	ASSERT_EQ(result.decisions.size(), 2u);
+	EXPECT_TRUE(result.decisions[0].decision.qualityScore > 0.0f);
+	EXPECT_GT(
+		result.decisions[1].decision.qualityScore,
+		result.decisions[0].decision.qualityScore);
+}

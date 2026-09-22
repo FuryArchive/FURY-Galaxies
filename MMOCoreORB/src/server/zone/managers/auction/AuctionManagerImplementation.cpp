@@ -314,7 +314,7 @@ void AuctionManagerImplementation::runFuryMarketTick() {
 		<< ", totalAskingValue=" << snapshot.totalAskingPrice;
 
 	if (ConfigManager::instance()->getBool("Fury.Economy.DryRun", true)) {
-		auto listings = FuryMarketObserver::collectListings(&items);
+		auto listings = FuryMarketObserver::collectListings(&items, zoneServer);
 		const float defaultDemand = ConfigManager::instance()->getFloat("Fury.Economy.DefaultDemand", 0.5f);
 		const float purchaseThreshold = ConfigManager::instance()->getFloat("Fury.Economy.PurchaseThreshold", 0.62f);
 		auto dryRun = FuryMarketDryRun::evaluate(listings, defaultDemand, purchaseThreshold);
