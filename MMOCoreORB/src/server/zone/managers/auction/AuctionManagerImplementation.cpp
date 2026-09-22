@@ -11,6 +11,7 @@
 #include "server/zone/managers/fury/economy/FuryMarketTickTask.h"
 #include "server/zone/managers/fury/economy/FuryMarketSettlementTask.h"
 #include "server/zone/managers/fury/economy/FurySettlementPlan.h"
+#include "server/zone/managers/fury/economy/FurySettlementSafety.h"
 #include "server/zone/managers/fury/economy/FuryDemandModel.h"
 #include "server/zone/managers/fury/economy/FuryItemQuality.h"
 #include "server/zone/managers/fury/economy/FuryEconomyState.h"
@@ -692,19 +693,22 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 		if (!plan.eligible)
 			return false;
 
-		const long long sellerCapacity =
-			(static_cast<long long>(CreditObject::CREDITCAP) - sellerCredits->getBankCredits()) +
-			(static_cast<long long>(CreditObject::CREDITCAP) - sellerCredits->getCashCredits());
-
-		if (plan.sellerNet <= 0 || static_cast<long long>(plan.sellerNet) > sellerCapacity) {
+		if (!FurySettlementSafety::canReceiveFullPayout(
+			sellerCredits->getBankCredits(),
+			sellerCredits->getCashCredits(),
+			plan.sellerNet,
+			CreditObject::CREDITCAP)) {
 			warning()
 				<< "FURY economy: rejecting listing " << listingId
 				<< " because seller cannot receive full payout of " << plan.sellerNet;
 			return false;
 		}
 
-		if (lockedCity != nullptr && plan.tax > 0 &&
-			lockedCity->getCityTreasury() + plan.tax > 100000000.0) {
+		if (lockedCity != nullptr &&
+			!FurySettlementSafety::canReceiveCityTax(
+				lockedCity->getCityTreasury(),
+				plan.tax,
+				100000000.0)) {
 			warning()
 				<< "FURY economy: rejecting listing " << listingId
 				<< " because city treasury cannot receive full tax of " << plan.tax;
