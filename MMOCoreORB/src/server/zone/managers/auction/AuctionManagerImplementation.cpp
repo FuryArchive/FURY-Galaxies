@@ -367,6 +367,14 @@ void AuctionManagerImplementation::initializeFuryEconomyState() {
 			loadedState = candidate;
 	}
 
+	if (stateCount > 1) {
+		error()
+			<< "FURY economy: found " << stateCount
+			<< " persistent demand state objects; refusing to select an arbitrary state";
+		furyEconomyState = nullptr;
+		return;
+	}
+
 	if (loadedState == nullptr) {
 		loadedState = new FuryEconomyState();
 		ObjectManager::instance()->persistObject(loadedState, 1, "furyeconomy");
@@ -377,9 +385,6 @@ void AuctionManagerImplementation::initializeFuryEconomyState() {
 			<< "FURY economy: loaded persistent demand state with "
 			<< loadedState->getDemandEntryCount() << " demand entries";
 	}
-
-	if (stateCount > 1)
-		warning() << "FURY economy: found " << stateCount << " persistent state objects; using the first";
 
 	furyEconomyState = loadedState;
 }
