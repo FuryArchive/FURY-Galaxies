@@ -24,8 +24,13 @@ bool FurySettlementSafety::canReceiveFullPayout(
 	int payout,
 	int creditCap) {
 
-	if (payout <= 0)
+	if (payout <= 0 || creditCap < 0)
 		return false;
+
+	if (bankCredits < 0 || cashCredits < 0 ||
+		bankCredits > creditCap || cashCredits > creditCap) {
+		return false;
+	}
 
 	return static_cast<std::int64_t>(payout) <=
 		remainingCreditCapacity(bankCredits, cashCredits, creditCap);

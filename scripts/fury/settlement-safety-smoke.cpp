@@ -13,6 +13,10 @@ int main() {
 	assert(FurySettlementSafety::canReceiveFullPayout(cap - 10, cap - 20, 30, cap));
 	assert(!FurySettlementSafety::canReceiveFullPayout(cap - 10, cap - 20, 31, cap));
 	assert(!FurySettlementSafety::canReceiveFullPayout(0, 0, 0, cap));
+	assert(!FurySettlementSafety::canReceiveFullPayout(-1, 0, 1, cap));
+	assert(!FurySettlementSafety::canReceiveFullPayout(0, -1, 1, cap));
+	assert(!FurySettlementSafety::canReceiveFullPayout(cap + 1, 0, 1, cap));
+	assert(!FurySettlementSafety::canReceiveFullPayout(0, cap + 1, 1, cap));
 
 	assert(FurySettlementSafety::canReceiveCityTax(99999990.0, 10, 100000000.0));
 	assert(!FurySettlementSafety::canReceiveCityTax(99999991.0, 10, 100000000.0));

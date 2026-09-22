@@ -797,6 +797,13 @@ void AuctionManagerImplementation::settleFuryMarketListing(
 		if (!plan.eligible)
 			return false;
 
+		if (sellerCredits->getOwnerObjectID() != expectedOwnerId) {
+			warning()
+				<< "FURY economy: rejecting listing " << listingId
+				<< " because CreditObject owner does not match seller";
+			return false;
+		}
+
 		if (!FurySettlementSafety::canReceiveFullPayout(
 			sellerCredits->getBankCredits(),
 			sellerCredits->getCashCredits(),
