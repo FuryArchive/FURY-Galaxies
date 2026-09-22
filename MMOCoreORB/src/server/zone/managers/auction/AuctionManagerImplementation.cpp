@@ -6,6 +6,7 @@
  */
 
 #include "server/zone/managers/auction/AuctionManager.h"
+#include "server/zone/managers/fury/economy/FuryMarketObserver.h"
 #include "server/zone/managers/auction/AuctionsMap.h"
 #include "server/zone/managers/object/ObjectManager.h"
 #include "templates/manager/TemplateManager.h"
@@ -300,6 +301,20 @@ void AuctionManagerImplementation::checkVendorItems(bool startupTask) {
 	info("Checking " + String::valueOf(items.size()) + " vendor terminals", true);
 
 	doAuctionMaint(&items, "vendor", startupTask);
+
+	if (ConfigManager::instance()->getBool("Fury.Economy.ObserveVendorMarket", false)) {
+		auto snapshot = FuryMarketObserver::scan(&items);
+
+		info(true)
+			<< "FURY economy observer: terminals=" << snapshot.terminalCount
+			<< ", activeListings=" << snapshot.activeListings
+			<< ", fixedPrice=" << snapshot.fixedPriceListings
+			<< ", auctions=" << snapshot.auctionListings
+			<< ", minPrice=" << snapshot.minPrice
+			<< ", maxPrice=" << snapshot.maxPrice
+			<< ", averagePrice=" << snapshot.averagePrice()
+			<< ", totalAskingValue=" << snapshot.totalAskingPrice;
+	}
 
 	auto elapsed = timer.stopMs();
 
