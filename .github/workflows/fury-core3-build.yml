@@ -1,0 +1,44 @@
+name: FURY Core3 build
+
+on:
+  push:
+    branches:
+      - fury-dev
+  pull_request:
+    paths:
+      - "MMOCoreORB/src/**"
+      - "MMOCoreORB/CMakeLists.txt"
+      - "MMOCoreORB/bin/conf/**"
+      - ".gitmodules"
+      - ".github/workflows/fury-core3-build.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Core3 + engine3
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 20
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y             build-essential             cmake             ninja-build             ccache             default-jre             libmariadb-dev             libmariadb-dev-compat             liblua5.3-dev             libdb5.3-dev             libssl-dev             zlib1g-dev             libboost-all-dev             libjemalloc-dev             libcpprest-dev
+
+      - name: Configure
+        working-directory: MMOCoreORB
+        run: |
+          cmake -S . -B build/fury-ci -G Ninja             -DCMAKE_BUILD_TYPE=Debug             -DBUILD_IDL=ON             -DCOMPILE_TESTS=ON             -DENABLE_NATIVE=OFF             -DENABLE_BUILD_CLIENT=OFF             -DRUN_GIT=OFF
+
+      - name: Build Core3
+        working-directory: MMOCoreORB
+        run: cmake --build build/fury-ci --target core3 -- -j2
+
+      - name: Record binary
+        run: |
+          test -x MMOCoreORB/build/fury-ci/src/core3
+          file MMOCoreORB/build/fury-ci/src/core3
