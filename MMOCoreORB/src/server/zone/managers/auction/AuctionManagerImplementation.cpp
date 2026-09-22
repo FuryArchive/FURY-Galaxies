@@ -7,6 +7,7 @@
 
 #include "server/zone/managers/auction/AuctionManager.h"
 #include "server/zone/managers/fury/economy/FuryMarketObserver.h"
+#include "server/zone/managers/fury/economy/FuryMarketDryRun.h"
 #include "server/zone/managers/auction/AuctionsMap.h"
 #include "server/zone/managers/object/ObjectManager.h"
 #include "templates/manager/TemplateManager.h"
@@ -314,6 +315,19 @@ void AuctionManagerImplementation::checkVendorItems(bool startupTask) {
 			<< ", maxPrice=" << snapshot.maxPrice
 			<< ", averagePrice=" << snapshot.averagePrice()
 			<< ", totalAskingValue=" << snapshot.totalAskingPrice;
+
+		if (ConfigManager::instance()->getBool("Fury.Economy.DryRun", true)) {
+			auto listings = FuryMarketObserver::collectListings(&items);
+			const float defaultDemand = ConfigManager::instance()->getFloat("Fury.Economy.DefaultDemand", 0.5f);
+			const float purchaseThreshold = ConfigManager::instance()->getFloat("Fury.Economy.PurchaseThreshold", 0.62f);
+			auto dryRun = FuryMarketDryRun::evaluate(listings, defaultDemand, purchaseThreshold);
+
+			info(true)
+				<< "FURY economy dry-run: eligible=" << dryRun.eligibleListings
+				<< ", wouldPurchase=" << dryRun.wouldPurchase
+				<< ", defaultDemand=" << defaultDemand
+				<< ", purchaseThreshold=" << purchaseThreshold;
+		}
 	}
 
 	auto elapsed = timer.stopMs();
